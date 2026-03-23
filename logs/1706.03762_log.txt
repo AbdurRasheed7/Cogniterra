@@ -1,24 +1,170 @@
 
+(venv) D:\ai_repro_engine>py pipeline.py --paper 1706.03762
+
 ============================================================
+🚀 Starting Reproducibility Pipeline for paper: 1706.03762
+Started at: 2026-03-12 21:50:08 IST
+============================================================
+
+Step 1: Fetching & parsing paper...
+📄 Parsing paper: 1706.03762
+🌐 Fetching paper from: https://ar5iv.org/html/1706.03762
+✅ Extracted 36,624 characters
+✅ Filtered to 35,364 characters
+   Extracted 35,364 chars
+Step 2: Detecting domain...
+
+--- DOMAIN DETECTION ---
+📝  Domain: NLP
+📊 Confidence: 95%
+🔑 Key terms found: NLP task detected
+💾 Will use dataset: 20NewsGroups (text classification)
+
+   Final domain for code gen: nlp
+Step 3: Building RAG context...
+🔍 Building FAISS vectorstore...
+✅ Created 50 chunks
+2026-03-12 21:50:13.663885: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-03-12 21:50:16.543121: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+WARNING:tensorflow:From D:\ai_repro_engine\venv\Lib\site-packages\tf_keras\src\losses.py:2976: The name tf.losses.sparse_softmax_cross_entropy is deprecated. Please use tf.compat.v1.losses.sparse_softmax_cross_entropy instead.
+
+✅ FAISS vectorstore ready!
+   Using nlp domain queries (8 queries)
+✅ RAG retrieved 25,428 relevant characters
+   Retrieved 25,428 chars of relevant context
+Step 4: Generating code with Groq...
+🤖 Sending to Groq for code generation...
+🔍 Extracting paper structure...
+   📋 Task: machine translation
+   📦 Dataset: WMT14
+   🏗️  Model: Transformer
+🏗️  Generating model class (attempt 1/3)...
+   ✅ Model class generated: Transformer
+📌 Patched NLP params: lr=0.001, batch_size=15, epochs=12
+✅ Code generated successfully! Model: Transformer
+
+--- GENERATED CODE PREVIEW (first 500 chars) ---
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from sklearn.datasets import fetch_20newsgroups
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, TensorDataset
+torch.manual_seed(42)
+np.random.seed(42)
+
+print("Loading 20newsgroups dataset...")
+data   = fetch_20newsgroups(subset='all', remove=('headers', 'footers', 'quotes'), dat...
+
+Step 5: Saving & executing code in Docker...
+💾 Code saved: D:\ai_repro_engine\generated_code\1706.03762_solution.py
+🐳 Starting Docker execution for 1706.03762...
+🐳 Generating Docker files for 1706.03762...
+Raw Groq response:
+ ```
+numpy
+scikit-learn
+torch
+torchvision
+```
+
+```
+FROM python:3.10-slim-bookworm
+
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends libgomp1 libjpeg62-turbo libpng16-16 && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+RUN mkdir -p /app/data && chown -R nobody:nogroup /app/data
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+USER nobody
+
+CMD ["python", "solution.py"]
+```
+   ✅ Parsed successfully
+   requirements.txt preview:
+ --extra-index-url https://download.pytorch.org/whl/cpu
+numpy
+scikit-learn
+torch
+torchvision
+
+   📄 requirements.txt to be used:
+--extra-index-url https://download.pytorch.org/whl/cpu
+numpy
+scikit-learn
+torch
+torchvision
+
+   📄 Dockerfile to be used:
+FROM python:3.10-slim-bookworm
+RUN apt-get update -y && \
+apt-get install -y --no-install-recommends libgomp1 libjpeg62-turbo libpng16-16 && \
+rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+RUN mkdir -p /app/data && chown -R nobody:nogroup /app/data
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+USER nobody
+CMD ["python", "solution.py"]
+
+   Building Docker image (5-15 min first time)...
+   ✅ Image built successfully
+   Starting container...
+Loading 20newsgroups dataset...
 Traceback (most recent call last):
-  File "D:\ai_repro_engine\pipeline.py", line 149, in <module>
-    main(
-    ~~~~^
-        paper_id=args.paper,
-        ^^^^^^^^^^^^^^^^^^^^
-        run_crew=args.crew,
-        ^^^^^^^^^^^^^^^^^^^
-        force_domain=args.domain
-        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/solution.py", line 57, in <module>
+    model     = Transformer(input_dim, num_classes).to(device)
+  File "/app/solution.py", line 40, in __init__
+    self.attn = nn.MultiHeadAttention(self.hidden_size, self.num_heads, batch_first=True)
+AttributeError: module 'torch.nn' has no attribute 'MultiHeadAttention'. Did you mean: 'MultiheadAttention'?
+
+   Container finished. Exit code: 1. Success: False
+   🧹 Container removed
+Docker FAILED — falling back to local debugger...
+Exit code 1
+Loading 20newsgroups dataset...
+Traceback (most recent call last):
+  File "/app/solution.py", line 57, in <module>
+    model     = Transformer(input_dim, num_classes).to(device)
+  File "/app/solution.py", line 40, in __init__
+    self.attn = nn.MultiHeadAttention(self.hidden_size, self.num_heads, batch_first=True)
+AttributeError: module 'torch.nn' has no attribute 'MultiHeadAttention'. Did you mean: 'MultiheadAttention'?
+
+❌ Error detected: AttributeError: module 'torch.nn' has no attribute 'MultiHeadAttention'. Did you mean: 'MultiheadAtt...
+🔧 Debugger Agent fixing code (attempt 1/3)...
+❌ Error detected: NameError: name 'F' is not defined...
+🔧 Debugger Agent fixing code (attempt 2/3)...
+
+❌ Pipeline failed: Command '['D:\\ai_repro_engine\\venv\\Scripts\\python.exe', 'D:\\ai_repro_engine\\generated_code\\1706.03762_solution.py']' timed out after 900 seconds
+Traceback (most recent call last):
+  File "D:\ai_repro_engine\pipeline.py", line 82, in main
+    stdout, stderr, final_code, attempts = run_with_debug(code, code_path, domain=domain)
+                                           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\ai_repro_engine\agents\debugger_agent.py", line 217, in run_with_debug
+    result = subprocess.run(
+        [sys.executable, code_path],
+    ...<2 lines>...
+        timeout=CODE_TIMEOUT_SEC
     )
-    ^
-  File "D:\ai_repro_engine\pipeline.py", line 27, in main
-    print(f"\U0001f680 Starting Reproducibility Pipeline for paper: {paper_id}")
-    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\ai_repro_engine\venv\Lib\site-packages\crewai\llm.py", line 141, in write
-    return self._original_stream.write(s)
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
-  File "C:\Users\ABDUR RASHEED\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1252.py", line 19, in encode
-    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
-           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f680' in position 0: character maps to <undefined>
+  File "C:\Users\ABDUR RASHEED\AppData\Local\Programs\Python\Python313\Lib\subprocess.py", line 556, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ABDUR RASHEED\AppData\Local\Programs\Python\Python313\Lib\subprocess.py", line 1219, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ABDUR RASHEED\AppData\Local\Programs\Python\Python313\Lib\subprocess.py", line 1640, in _communicate
+    raise TimeoutExpired(self.args, orig_timeout)
+subprocess.TimeoutExpired: Command '['D:\\ai_repro_engine\\venv\\Scripts\\python.exe', 'D:\\ai_repro_engine\\generated_code\\1706.03762_solution.py']' timed out after 900 seconds

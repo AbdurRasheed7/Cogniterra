@@ -7,7 +7,7 @@
         body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 20px; background: #f8f9fa; line-height: 1.6; }
         .header { background: linear-gradient(135deg, #2c3e50, #34495e); color: white; padding: 40px 30px; border-radius: 12px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.15); }
         .card { background: white; padding: 30px; margin: 25px 0; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
-        .score { font-size: 90px; font-weight: bold; color: #2ecc71; text-align: center; margin: 0; }
+        .score { font-size: 90px; font-weight: bold; color: #f39c12; text-align: center; margin: 0; }
         .score-label { text-align: center; color: #555; font-size: 22px; margin-bottom: 20px; }
         .status { font-size: 28px; text-align: center; margin: 15px 0; font-weight: bold; }
         .metric { display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #eee; font-size: 18px; }
@@ -23,32 +23,32 @@
 <body>
     <div class="header">
         <h1>🔬 AI Reproducibility Engine Report</h1>
-        <p>Paper ID: <strong>1202.2745</strong> | Generated: 2026-03-08 10:49:33 IST</p>
+        <p>Paper ID: <strong>1202.2745</strong> | Generated: 2026-03-22 17:26:27 IST</p>
     </div>
 
     <div class="card">
-        <div class="score">88.2</div>
+        <div class="score">65</div>
         <div class="score-label">Reproducibility Score / 100</div>
-        <div class="status pass">✅ PASS</div>
+        <div class="status pass">✅ PASS - Executed successfully (no baseline to compare)</div>
     </div>
 
     <div class="card">
         <h2>📊 Results Comparison</h2>
         <div class="metric">
             <span class="metric-label">Expected Accuracy (Paper Claim)</span>
-            <span class="metric-value">99.2%</span>
+            <span class="metric-value">N/A</span>
         </div>
         <div class="metric">
             <span class="metric-label">Actual Accuracy (Our Run)</span>
-            <span class="metric-value">97.43%</span>
+            <span class="metric-value">78.04%</span>
         </div>
         <div class="metric">
             <span class="metric-label">Difference</span>
-            <span class="metric-value">1.77%</span>
+            <span class="metric-value">N/A</span>
         </div>
         <div class="metric">
             <span class="metric-label">Tolerance</span>
-            <span class="metric-value">±3.0%</span>
+            <span class="metric-value">±5.0%</span>
         </div>
         <div class="metric">
             <span class="metric-label">Runtime Errors</span>
@@ -58,7 +58,8 @@
 
     <div class="card">
         <h2>💻 Generated Code</h2>
-        <div class="code-block">import torch
+        <div class="code-block">
+import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
@@ -68,78 +69,86 @@ from torch.utils.data import DataLoader
 torch.manual_seed(42)
 np.random.seed(42)
 
-
-# Import necessary libraries
-
-# Set random seeds for reproducibility
-
-# Define device (GPU or CPU)
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-# Define hyperparameters
-batch_size = 128
-num_epochs = 5
-learning_rate = 0.001
-momentum = 0.9
-
-# Define data transforms
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
-])
-
-# Load MNIST dataset
-train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
-
-# Create data loaders
-train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
-test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
-
-# Define the neural network model
-class Net(nn.Module):
+class DNN(nn.Module):
     def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(64 * 5 * 5, 10)  # Dynamic flattening will be applied before this layer
+        super(DNN, self).__init__()
+        self.conv1 = nn.Conv2d(3, 100, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(100)
+        self.conv2 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(100)
+        self.conv3 = nn.Conv2d(100, 100, kernel_size=3, padding=1, stride=2)
+        self.bn3 = nn.BatchNorm2d(100)
+        self.conv4 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
+        self.bn4 = nn.BatchNorm2d(100)
+        self.conv5 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
+        self.bn5 = nn.BatchNorm2d(100)
+        self.conv6 = nn.Conv2d(100, 100, kernel_size=3, padding=1, stride=2)
+        self.bn6 = nn.BatchNorm2d(100)
+        self.conv7 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
+        self.bn7 = nn.BatchNorm2d(100)
+        self.conv8 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
+        self.bn8 = nn.BatchNorm2d(100)
+        self.conv9 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
+        self.bn9 = nn.BatchNorm2d(100)
+        self.conv10 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
+        self.bn10 = nn.BatchNorm2d(100)
+        self.pool = nn.AdaptiveAvgPool2d((1,1))
+        self.fc = nn.Linear(100, 10)
 
     def forward(self, x):
-        x = self.pool(torch.relu(self.conv1(x)))
-        x = self.pool(torch.relu(self.conv2(x)))
-        x = x.view(x.size(0), -1)  # Dynamic flattening
-        x = self.fc1(x)
-        return x
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.relu(self.bn2(self.conv2(out)))
+        out = F.relu(self.bn3(self.conv3(out)))
+        out = F.relu(self.bn4(self.conv4(out)))
+        out = F.relu(self.bn5(self.conv5(out)))
+        out = F.relu(self.bn6(self.conv6(out)))
+        out = F.relu(self.bn7(self.conv7(out)))
+        out = F.relu(self.bn8(self.conv8(out)))
+        out = F.relu(self.bn9(self.conv9(out)))
+        out = F.relu(self.bn10(self.conv10(out)))
+        out = self.pool(out)
+        out = out.view(out.size(0), -1)
+        out = self.fc(out)
+        return out
 
-# Initialize the model, optimizer, and loss function
-model = Net().to(device)
+# ── Data loading ──────────────────────────────────────────────────────────────
+transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))])
+train_dataset = datasets.CIFAR10('./data', train=True,  download=True, transform=transform)
+test_dataset  = datasets.CIFAR10('./data', train=False, download=True, transform=transform)
+train_loader  = DataLoader(train_dataset, batch_size=64, shuffle=True)
+test_loader   = DataLoader(test_dataset,  batch_size=64, shuffle=False)
+
+device    = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model     = DNN().to(device)
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum)
+optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9, nesterov=True, weight_decay=0.01)
 
-# Train the model
+num_epochs = 10
 for epoch in range(num_epochs):
-    for i, (images, labels) in enumerate(train_loader):
+    model.train()
+    running_loss = 0.0
+    for images, labels in train_loader:
         images, labels = images.to(device), labels.to(device)
         optimizer.zero_grad()
         outputs = model(images)
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
+        running_loss += loss.item()
+    print(f"Epoch [{epoch+1}/{num_epochs}] Loss: {running_loss/len(train_loader):.4f}")
 
-# Evaluate the model
 model.eval()
 correct = 0
-total = 0
+total   = 0
 with torch.no_grad():
     for images, labels in test_loader:
         images, labels = images.to(device), labels.to(device)
         outputs = model(images)
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
+        _, predicted = torch.max(outputs, 1)
+        total   += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-accuracy = 100 * correct / total
+accuracy = 100.0 * correct / total
 print(f"Final Accuracy: {accuracy:.2f}%")
 </div>
     </div>

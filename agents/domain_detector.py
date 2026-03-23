@@ -85,33 +85,88 @@ def detect_domain(paper_text):
     text_lower = paper_text.lower()
 
     # ── Priority order: most specific first, CNN dead last ────────────────────
-    # CNN check is last because "convolutional" appears in many non-CV papers:
-    # - Transformer paper mentions CNN in comparison
-    # - GCN has "convolutional" in the name
-    # - Atari DQN uses CNN as function approximator
 
-    # 1. NLP — FIRST because Transformer/BERT papers mention "convolutional" in passing
+    # -2. Graph PRE-CHECK — must be BEFORE CV pre-check because GCN paper
+    #     mentions "semi-supervised classification" which could trigger CV
+    if any(term in text_lower for term in [
+        "graph convolutional network", "graph neural network",
+        "node classification", "message passing", "adjacency matrix",
+        "graph convolution", "spectral graph", "graph laplacian",
+        "semi-supervised classification with graph",
+        "gcn", "gnn", "graph attention", "graphsage",
+        "graph isomorphism", "molecular graph",
+        "cora", "citeseer", "pubmed dataset", "citation network"
+    ]):
+        return _result("graph", ["graph/GNN domain detected"])
+
+    # -1. CV PRE-CHECK — only fire on terms that are 100% unambiguous CV
+    #     Must NOT appear in RL papers (DDPG mentions "deep" and "network" everywhere)
+    if any(term in text_lower for term in [
+        "image classification on imagenet",
+        "top-1 accuracy", "top-5 accuracy",
+        "vgg very deep", "very deep convolutional networks for large-scale",
+        "mobilenet", "efficientnet",
+        "densely connected convolutional", "densenet",
+        "feature pyramid network", "object detection with deep"
+    ]):
+        return _result("image_classification", ["CV pre-check detected"])
+
+    # 0. Graph PRE-CHECK (fallback) — before NLP because GCN papers mention "text classification"
+    #    in experiments section when benchmarking on text datasets
+    if any(term in text_lower for term in [
+        "graph convolutional network", "graph neural network",
+        "node classification", "message passing", "adjacency matrix",
+        "graph convolution", "spectral graph", "graph laplacian",
+        "semi-supervised classification with graph",
+        "gcn", "gnn", "graph attention", "graphsage",
+        "graph isomorphism", "molecular graph"
+    ]):
+        return _result("graph", ["graph/GNN domain detected"])
+
+    # 0.5. Recommendation PRE-CHECK — before NLP because NCF/rec papers
+    #      mention "natural language processing" in related work
+    if any(term in text_lower for term in [
+        "recommendation system", "recommender system",
+        "collaborative filtering", "matrix factorization",
+        "user-item interaction", "rating prediction",
+        "movielens", "implicit feedback", "explicit feedback",
+        "personalized recommendation", "top-k recommendation",
+        "click through rate", "cold start problem"
+    ]):
+        return _result("recommendation", ["recommendation system detected"])
+
+    # 1. NLP — after recommendation pre-check
+    #    Removed "text classification", "bert", "transformer" alone —
+    #    they appear in GCN/graph papers as benchmark comparisons
     if any(term in text_lower for term in [
         "attention mechanism", "multi-head attention", "self-attention",
         "machine translation", "language model", "seq2seq", "sequence to sequence",
         "natural language processing", "named entity recognition",
-        "text classification", "sentiment analysis", "question answering",
-        "bert", "gpt", "transformer", "attention is all you need",
-        "positional encoding", "bleu", "tokenization", "subword",
-        "encoder decoder", "masked language", "text generation",
-        "translation", "summarization", "pre-training language"
+        "sentiment analysis", "question answering",
+        "attention is all you need", "positional encoding",
+        "neural machine translation", "bleu score",
+        "tokenization", "subword", "masked language model",
+        "text generation task", "pre-training language",
+        "language understanding", "bert pre-training",
+        "encoder decoder attention", "transformer model for"
     ]):
         return _result("nlp", ["NLP task detected"])
 
     # 2. Reinforcement Learning — before CV because RL papers use CNNs (e.g. Atari DQN)
-    if any(term in text_lower for term in [
+    # Note: short terms like "ppo", "sac", "dqn" must be checked as whole words
+    #       to avoid matching substrings like "approach", "saccade", "adjacent"
+    import re as _re
+    rl_long_terms = [
         "reinforcement learning", "reward function", "policy gradient",
-        "q-learning", "markov decision", "dqn", "ppo", "actor-critic",
+        "q-learning", "markov decision", "actor-critic",
         "openai gym", "action space", "state space", "episode reward",
         "value function", "temporal difference", "replay buffer",
-        "epsilon greedy", "discount factor", "ddpg", "sac", "a3c",
+        "epsilon greedy", "discount factor",
         "proximal policy", "trust region", "gymnasium", "rollout"
-    ]):
+    ]
+    rl_short_terms = ["dqn", "ppo", "ddpg", "a3c", "a2c"]  # removed "sac" — too ambiguous as standalone word
+    rl_match = any(term in text_lower for term in rl_long_terms) or                any(_re.search(rf'\b{term}\b', text_lower) for term in rl_short_terms)
+    if rl_match:
         return _result("reinforcement_learning", ["reinforcement learning detected"])
 
     # 3. Graph — before CV because "graph convolutional" contains "convolutional"
@@ -126,14 +181,19 @@ def detect_domain(paper_text):
         return _result("graph", ["graph/GNN domain detected"])
 
     # 4. Generative — before CV because GANs/VAEs heavily use CNNs
-    if any(term in text_lower for term in [
+    #    Short terms like "gan", "vae" checked as whole words to avoid substrings
+    import re as _re2
+    gen_long_terms = [
         "generative adversarial", "variational autoencoder",
-        "image generation", "gan", "vae", "diffusion model",
+        "image generation", "diffusion model",
         "denoising diffusion", "score matching", "image synthesis",
         "style transfer", "super resolution", "normalizing flow",
         "ddpm", "stable diffusion", "noise prediction", "latent diffusion",
         "generator network", "discriminator network"
-    ]):
+    ]
+    gen_short_terms = ["vae"]  # removed "gan" — appears as standalone word in non-generative papers
+    gen_match = any(term in text_lower for term in gen_long_terms) or                 any(_re2.search(rf'\b{term}\b', text_lower) for term in gen_short_terms)
+    if gen_match:
         return _result("generative", ["generative model detected"])
 
     # 5. Recommendation

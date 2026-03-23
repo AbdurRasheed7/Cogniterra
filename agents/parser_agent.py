@@ -5,28 +5,30 @@ from config import KEEP_KEYWORDS, STOP_SECTIONS
 
 
 def extract_text_from_url(arxiv_id):
-    """Try ar5iv first, fall back to arxiv abstract page"""
+    """Try multiple sources in order — ar5iv, arxiv HTML, arxiv abstract"""
     urls = [
         f"https://ar5iv.org/html/{arxiv_id}",
-        f"https://arxiv.org/html/{arxiv_id}",   # newer arxiv HTML
+        f"https://ar5iv.labs.arxiv.org/html/{arxiv_id}",  # ar5iv mirror
+        f"https://arxiv.org/html/{arxiv_id}",              # arxiv native HTML
+        f"https://arxiv.org/abs/{arxiv_id}",               # abstract page fallback
     ]
 
     for url in urls:
         print(f"🌐 Fetching paper from: {url}")
         try:
-            response = requests.get(url, timeout=45)
+            response = requests.get(url, timeout=45, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; ResearchBot/1.0)"
+            })
             response.raise_for_status()
 
             soup = BeautifulSoup(response.text, 'html.parser')
 
-            # Remove unwanted tags
             for tag in soup(['script', 'style', 'figure', 'table',
                              'nav', 'header', 'footer', 'aside']):
                 tag.decompose()
 
             raw_text = soup.get_text(separator='\n', strip=True)
 
-            # Clean up artifacts
             raw_text = re.sub(r'\n{3,}', '\n\n', raw_text)
             raw_text = re.sub(r'Page \d+', '', raw_text)
             raw_text = re.sub(r'\[[\d\s]+\]', '', raw_text)
@@ -48,8 +50,8 @@ def filter_sections(text):
     if not text:
         return ""
 
-    lines = text.split('\n')
-    keep = []
+    lines     = text.split('\n')
+    keep      = []
     capturing = False
 
     for line in lines:
@@ -65,8 +67,6 @@ def filter_sections(text):
     filtered = '\n'.join(keep)
     filtered = re.sub(r'\n{3,}', '\n\n', filtered)
 
-    # Guard: if filter returned almost nothing, fall back to full raw text
-    # This happens for papers with unusual section names
     if len(filtered) < 500:
         print("⚠️  Section filter returned too little — using full raw text")
         return text

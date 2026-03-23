@@ -3,6 +3,8 @@ import sys
 import argparse
 from datetime import datetime
 
+import io
+
 from config import OUTPUT_DIR, REPORTS_DIR, RANDOM_SEED
 from agents.parser_agent import parse_paper
 from agents.rag_agent import get_relevant_context
@@ -15,6 +17,8 @@ from agents.debugger_agent import run_with_debug
 from agents.crew_agents import run_crew_analysis
 from data.download_movielens import download_movielens
 from utils.docker_helper import run_code_in_docker
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 def save_code(code, paper_id):
     os.makedirs(OUTPUT_DIR, exist_ok=True)

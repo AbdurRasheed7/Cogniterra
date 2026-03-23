@@ -9,42 +9,61 @@ from torch.utils.data import DataLoader
 torch.manual_seed(42)
 np.random.seed(42)
 
-# ── Proven LeNet-style model (97-99% on MNIST in 5 epochs) ───────────────────
-class Net(nn.Module):
+class ResNet(nn.Module):
     def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, padding=2)
-        self.bn1   = nn.BatchNorm2d(32)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=5, padding=2)
-        self.bn2   = nn.BatchNorm2d(64)
-        self.pool  = nn.MaxPool2d(2, 2)
-        self.fc1   = nn.LazyLinear(128)
-        self.fc2   = nn.Linear(128, 10)
-        self.drop  = nn.Dropout(0.25)
+        super(ResNet, self).__init__()
+        self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.block1 = self._make_block(64, 64)
+        self.block2 = self._make_block(64, 64)
+        self.block3 = self._make_block(64, 64)
+        self.block4 = self._make_block(64, 64)
+        self.avgpool = nn.AdaptiveAvgPool2d((1,1))
+        self.fc = nn.Linear(64, 10)
+
+    def _make_block(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels)
+        )
 
     def forward(self, x):
-        x = self.pool(F.relu(self.bn1(self.conv1(x))))
-        x = self.pool(F.relu(self.bn2(self.conv2(x))))
-        x = x.view(x.size(0), -1)   # dynamic flatten — never hardcoded
-        x = F.relu(self.fc1(x))
-        x = self.drop(x)
-        return self.fc2(x)
+        x = F.relu(self.bn1(self.conv1(x)))
+        residual = x
+        x = self.block1(x)
+        x += residual
+        x = F.relu(x)
+        residual = x
+        x = self.block2(x)
+        x += residual
+        x = F.relu(x)
+        residual = x
+        x = self.block3(x)
+        x += residual
+        x = F.relu(x)
+        residual = x
+        x = self.block4(x)
+        x += residual
+        x = F.relu(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        return x
 
 # ── Data loading ──────────────────────────────────────────────────────────────
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
-])
+transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
 train_dataset = datasets.MNIST('./data', train=True,  download=True, transform=transform)
 test_dataset  = datasets.MNIST('./data', train=False, download=True, transform=transform)
-train_loader  = DataLoader(train_dataset, batch_size=128, shuffle=True)
-test_loader   = DataLoader(test_dataset,  batch_size=128, shuffle=False)
+train_loader  = DataLoader(train_dataset, batch_size=64, shuffle=True)
+test_loader   = DataLoader(test_dataset,  batch_size=64, shuffle=False)
 
-# ── Training ──────────────────────────────────────────────────────────────────
 device    = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model     = Net().to(device)
+model     = ResNet().to(device)
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9, nesterov=True, weight_decay=0.0001)
+optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9, nesterov=True, weight_decay=0.0001)
 
 num_epochs = 10
 for epoch in range(num_epochs):
@@ -60,7 +79,6 @@ for epoch in range(num_epochs):
         running_loss += loss.item()
     print(f"Epoch [{epoch+1}/{num_epochs}] Loss: {running_loss/len(train_loader):.4f}")
 
-# ── Evaluation ────────────────────────────────────────────────────────────────
 model.eval()
 correct = 0
 total   = 0

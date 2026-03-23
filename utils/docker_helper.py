@@ -7,6 +7,7 @@ Fixes:
   4. Container run: no network_mode=host, no privileged, no remove=True race condition
   5. Robust fenced-block parsing handles ```python / ```dockerfile language tags
   6. CODE_TIMEOUT_SEC and MAX_MEMORY_MB now read from config
+  7. Data folder (MovieLens, etc.) copied into Docker build context if present
 """
 
 from langchain_groq import ChatGroq
@@ -203,6 +204,12 @@ def run_code_in_docker(
         with open(os.path.join(tmpdir, "solution.py"), "w", encoding="utf-8") as f:
             f.write(code)
 
+        # ── Resolve local data folder path (used for volume mount) ─────────
+        local_data_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
+        local_data_dir = os.path.normpath(local_data_dir)
+        os.makedirs(local_data_dir, exist_ok=True)
+        print(f"   📂 Will mount data folder as volume: {local_data_dir}")
+
         # ── Check if image already exists — skip Groq + build if so ───────
         image = None
         try:
@@ -260,6 +267,7 @@ def run_code_in_docker(
                 image.id,
                 detach=True,
                 mem_limit=f"{MAX_MEMORY_MB}m",
+                volumes={local_data_dir: {'bind': '/app/data', 'mode': 'rw'}},
                 stdout=True,
                 stderr=True,
             )
