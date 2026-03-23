@@ -82,3 +82,22 @@ tests/*.actual
 *.tar.gz
 *.gz
 .ipynb_checkpoints/
+
+# Debug scripts
+debug_*.py
+
+# Log files
+*.log
+logs/
+
+# Test structure cache
+tests/structure/
+
+# Generated code (optional)
+#generated_code/
+
+# Reports (optional)
+#reports/
+
+# Golden JSONs (optional — keep if you want them tracked)
+# tests/golden/
