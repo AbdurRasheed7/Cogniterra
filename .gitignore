@@ -90,6 +90,8 @@ debug_*.py
 *.log
 logs/
 
+my_model.h5 # if this is a large test model, ignore it; otherwise, keep if it's small and useful for testing
+
 # Test structure cache
 #tests/structure/
 
