@@ -71,14 +71,15 @@ html,body,.stApp{background:#0f1117!important;margin:0;padding:0;}
 
 @st.cache_resource
 def load_agents():
-    from agents.parser_agent import parse_paper
+    from agents.latex_ingestion import parse_paper, get_last_source_type   # Upgrade 1
     from agents.rag_agent import get_relevant_context
     from agents.coder_agent import generate_code
     from agents.domain_detector import detect_domain, get_code_domain
-    from agents.tester_agent import run_test, generate_html_report
-    return parse_paper, get_relevant_context, generate_code, detect_domain, get_code_domain, run_test, generate_html_report
+    from agents.tester_agent import generate_html_report
+    from agents.scoring_engine import run_test                              # Upgrade 2
+    return parse_paper, get_last_source_type, get_relevant_context, generate_code, detect_domain, get_code_domain, run_test, generate_html_report
 
-parse_paper, get_relevant_context, generate_code, detect_domain, get_code_domain, run_test, generate_html_report = load_agents()
+parse_paper, get_last_source_type, get_relevant_context, generate_code, detect_domain, get_code_domain, run_test, generate_html_report = load_agents()
 
 st.markdown("""
 <style>
@@ -161,12 +162,13 @@ section[data-testid="stSidebar"]{display:none;}
 .dot-y{width:12px;height:12px;border-radius:50%;background:#ffbd2e;}
 .dot-g{width:12px;height:12px;border-radius:50%;background:#28c840;}
 .code-fn{font-size:0.69rem;color:var(--text3);margin-left:8px;font-family:'JetBrains Mono',monospace;}
-.mg{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px;}
-.mc{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.2rem;transition:all 0.2s;}
+.mg{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+.mc{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.2rem;transition:all 0.2s;flex:1;min-width:120px;}
 .mc:hover{border-color:var(--border2);transform:translateY(-1px);}
 .mc.pass{border-top:2px solid var(--success);}
 .mc.fail{border-top:2px solid var(--error);}
 .mc.neu{border-top:2px solid var(--accent);}
+.mc.warn{border-top:2px solid var(--warn);}
 .mc-lbl{font-size:0.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;font-weight:700;}
 .mc-val{font-size:1.65rem;font-weight:800;color:var(--text);letter-spacing:-0.04em;line-height:1;font-family:'Sora',sans-serif;}
 .mc-unt{font-size:0.74rem;font-weight:500;color:var(--text2);margin-left:2px;}
@@ -186,6 +188,32 @@ section[data-testid="stSidebar"]{display:none;}
 .et tr:hover td{background:var(--surf2);}
 .et-final td{color:var(--text)!important;font-weight:700!important;}
 .final-tag{background:rgba(34,197,94,0.12);color:var(--success);border:1px solid rgba(34,197,94,0.3);font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:5px;}
+/* 4-dimension scoring styles */
+.dim-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.2rem;}
+.dim-card{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:1rem 1.1rem;position:relative;overflow:hidden;}
+.dim-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;}
+.dim-exec::before{background:linear-gradient(90deg,#22c55e,#16a34a);}
+.dim-meth::before{background:linear-gradient(90deg,#f97316,#ea580c);}
+.dim-res::before{background:linear-gradient(90deg,#3b82f6,#2563eb);}
+.dim-comp::before{background:linear-gradient(90deg,#a855f7,#9333ea);}
+.dim-label{font-size:0.58rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:4px;}
+.dim-score{font-family:'Sora',sans-serif;font-size:2rem;font-weight:800;color:var(--text);letter-spacing:-0.04em;line-height:1;}
+.dim-weight{font-size:0.62rem;color:var(--text3);margin-top:4px;}
+.dim-bar-wrap{background:var(--surf2);border-radius:4px;height:4px;margin-top:8px;overflow:hidden;}
+.dim-bar{height:4px;border-radius:4px;transition:width 1s ease;}
+.dim-exec .dim-bar{background:linear-gradient(90deg,#22c55e,#16a34a);}
+.dim-meth .dim-bar{background:linear-gradient(90deg,#f97316,#ea580c);}
+.dim-res .dim-bar{background:linear-gradient(90deg,#3b82f6,#2563eb);}
+.dim-comp .dim-bar{background:linear-gradient(90deg,#a855f7,#9333ea);}
+.sub-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:1rem;}
+.sub-card{background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:0.7rem 0.8rem;text-align:center;}
+.sub-label{font-size:0.55rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:5px;line-height:1.3;}
+.sub-val{font-size:1.1rem;font-weight:800;font-family:'Sora',sans-serif;}
+.sub-full{color:var(--success);}
+.sub-half{color:var(--warn);}
+.sub-zero{color:var(--error);}
+.weight-formula{background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:0.8rem 1rem;font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--text2);margin-top:0.5rem;}
+.weight-formula span{color:var(--accent);font-weight:700;}
 .cta-box{background:linear-gradient(135deg,rgba(249,115,22,0.08),rgba(124,58,237,0.08));border:1px solid rgba(249,115,22,0.2);border-radius:16px;padding:2.5rem;text-align:center;margin-top:2rem;}
 .cta-title{font-family:'Sora',sans-serif;font-size:1.3rem;font-weight:800;color:var(--text);letter-spacing:-0.02em;margin-bottom:6px;}
 .cta-sub{font-size:0.82rem;color:var(--text2);margin-bottom:1.6rem;}
@@ -284,8 +312,111 @@ def render_sidebar():
     h += '</div>'
     st.markdown(h, unsafe_allow_html=True)
 
+def render_dimension_scores(res):
+    """Render the 4-dimension scoring breakdown cards."""
+    dims = res.get("dimension_scores", {})
+    e_sc = dims.get("execution",    0)
+    m_sc = dims.get("methodology",  0)
+    r_sc = dims.get("results",      0)
+    c_sc = dims.get("completeness", 0)
+
+    def score_color(s):
+        if s >= 75: return "var(--success)"
+        if s >= 50: return "var(--warn)"
+        return "var(--error)"
+
+    st.markdown(f"""
+    <div class="dim-grid">
+      <div class="dim-card dim-exec">
+        <div class="dim-label">Execution</div>
+        <div class="dim-score" style="color:{score_color(e_sc)}">{e_sc:.0f}</div>
+        <div class="dim-weight">weight 0.20</div>
+        <div class="dim-bar-wrap"><div class="dim-bar" style="width:{e_sc}%"></div></div>
+      </div>
+      <div class="dim-card dim-meth">
+        <div class="dim-label">Methodology</div>
+        <div class="dim-score" style="color:{score_color(m_sc)}">{m_sc:.0f}</div>
+        <div class="dim-weight">weight 0.35</div>
+        <div class="dim-bar-wrap"><div class="dim-bar" style="width:{m_sc}%"></div></div>
+      </div>
+      <div class="dim-card dim-res">
+        <div class="dim-label">Results</div>
+        <div class="dim-score" style="color:{score_color(r_sc)}">{r_sc:.0f}</div>
+        <div class="dim-weight">weight 0.30</div>
+        <div class="dim-bar-wrap"><div class="dim-bar" style="width:{r_sc}%"></div></div>
+      </div>
+      <div class="dim-card dim-comp">
+        <div class="dim-label">Completeness</div>
+        <div class="dim-score" style="color:{score_color(c_sc)}">{c_sc:.0f}</div>
+        <div class="dim-weight">weight 0.15</div>
+        <div class="dim-bar-wrap"><div class="dim-bar" style="width:{c_sc}%"></div></div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Methodology sub-scores
+    method_detail = res.get("methodology_detail", {})
+    if method_detail:
+        def sub_cls(v):
+            if v >= 0.9: return "sub-full"
+            if v >= 0.4: return "sub-half"
+            return "sub-zero"
+        def sub_sym(v):
+            if v >= 0.9: return "1.0"
+            if v >= 0.4: return "0.5"
+            return "0.0"
+
+        arch  = method_detail.get("architecture_match", 0)
+        opt   = method_detail.get("optimizer_match", 0)
+        loss  = method_detail.get("loss_match", 0)
+        hp    = method_detail.get("hyperparams_present", 0)
+        contrib = method_detail.get("contribution_implemented", 0)
+        reasoning = method_detail.get("reasoning", "")
+
+        st.markdown(f"""
+        <p class="card-label" style="margin-top:0.8rem">Methodology Sub-Scores</p>
+        <div class="sub-grid">
+          <div class="sub-card">
+            <div class="sub-label">Architecture</div>
+            <div class="sub-val {sub_cls(arch)}">{sub_sym(arch)}</div>
+          </div>
+          <div class="sub-card">
+            <div class="sub-label">Optimizer</div>
+            <div class="sub-val {sub_cls(opt)}">{sub_sym(opt)}</div>
+          </div>
+          <div class="sub-card">
+            <div class="sub-label">Loss Fn</div>
+            <div class="sub-val {sub_cls(loss)}">{sub_sym(loss)}</div>
+          </div>
+          <div class="sub-card">
+            <div class="sub-label">Hyperparams</div>
+            <div class="sub-val {sub_cls(hp)}">{sub_sym(hp)}</div>
+          </div>
+          <div class="sub-card">
+            <div class="sub-label">Contribution</div>
+            <div class="sub-val {sub_cls(contrib)}">{sub_sym(contrib)}</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if reasoning:
+            st.markdown(f'<p style="font-size:0.73rem;color:var(--text3);font-style:italic;margin-bottom:0.5rem">"{reasoning}"</p>', unsafe_allow_html=True)
+
+    # Completeness reason
+    comp_reason = res.get("completeness_reason", "")
+    if comp_reason:
+        st.markdown(f'<p style="font-size:0.73rem;color:var(--text3);margin-top:0.3rem"><b style="color:var(--text2)">Completeness:</b> {comp_reason}</p>', unsafe_allow_html=True)
+
+    # Weighted formula display
+    final = res.get("final_score", res.get("reproducibility_score", 0))
+    st.markdown(f"""
+    <div class="weight-formula">
+      Final = <span>0.20</span>×{e_sc:.0f} + <span>0.35</span>×{m_sc:.0f} + <span>0.30</span>×{r_sc:.0f} + <span>0.15</span>×{c_sc:.0f} = <span>{final}</span> / 100
+    </div>
+    """, unsafe_allow_html=True)
+
 # ── Session defaults ──────────────────────────────────────────────────────────
-for k, v in [("stage","upload"),("paper_id",""),("text",""),("detection",None),("rag",""),("code",""),("result",None),("ep_accs",[]),("title",""),("stdout",""),("stderr",""),("pipe",0),("domain","")]:
+for k, v in [("stage","upload"),("paper_id",""),("text",""),("detection",None),("rag",""),("code",""),("result",None),("ep_accs",[]),("title",""),("stdout",""),("stderr",""),("pipe",0),("domain",""),("fast_mode",True)]:
     if k not in st.session_state: st.session_state[k] = v
 
 # ── TOPBAR ────────────────────────────────────────────────────────────────────
@@ -294,7 +425,7 @@ st.markdown("""
   <div class="tb-left">
     <div class="tb-logo">CT</div>
     <span class="tb-name">Cogniterra</span>
-    <span class="tb-tag">v1.0 beta</span>
+    <span class="tb-tag">v2.0</span>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -313,7 +444,7 @@ with main_col:
         render_pipe(0)
         st.markdown('<div class="eyebrow">Step 1 of 4</div>', unsafe_allow_html=True)
         st.markdown('<div class="page-title">Upload a Research Paper</div>', unsafe_allow_html=True)
-        st.markdown('<div class="page-desc">Enter an ArXiv ID or upload a PDF — Cogniterra handles the rest</div>', unsafe_allow_html=True)
+        st.markdown('<div class="page-desc">Enter an ArXiv ID or upload a PDF -- Cogniterra handles the rest</div>', unsafe_allow_html=True)
 
         col_l, col_r = st.columns([3,2], gap="large")
         with col_l:
@@ -328,7 +459,7 @@ with main_col:
                         if st.button(pid, key=f"q{i}", use_container_width=True, type="secondary"):
                             st.session_state.paper_id = pid; st.rerun()
             c1, c2 = st.columns([4,1], gap="small")
-            with c1: start_btn = st.button("Start Analysis →", use_container_width=True, type="primary")
+            with c1: start_btn = st.button("Start Analysis ->", use_container_width=True, type="primary")
             with c2:
                 if st.button("Clear", use_container_width=True, type="secondary"): reset_all(); st.rerun()
 
@@ -345,7 +476,7 @@ with main_col:
         if start_btn:
             pid = arxiv.strip() if arxiv.strip() else st.session_state.paper_id
             if not pid and not uploaded: st.error("Please enter an ArXiv ID or upload a PDF.")
-            elif uploaded: st.warning("PDF upload coming soon — please use an ArXiv ID for now.")
+            elif uploaded: st.warning("PDF upload coming soon -- please use an ArXiv ID for now.")
             else:
                 st.session_state.paper_id = pid; st.session_state.pipe = 1; st.session_state.stage = "analysis"; st.rerun()
 
@@ -353,36 +484,40 @@ with main_col:
     elif st.session_state.stage == "analysis":
         render_pipe(st.session_state.pipe)
         if not st.session_state.text:
-            st.info("📡  Fetching paper — please wait...")
+            st.info("📡  Fetching paper -- please wait...")
             prog = st.progress(10)
             try:
+                # Upgrade 1: uses latex_ingestion.parse_paper
                 text = parse_paper(st.session_state.paper_id)
                 if not text.strip(): raise ValueError("No text extracted. Check the ArXiv ID.")
+                source_type = get_last_source_type()
                 prog.progress(40)
                 st.session_state.text = text
                 st.session_state.title = get_title(text)
                 st.session_state.pipe = 2
 
-                # Detect domain
-                detection = detect_domain(text)
+                # FIX: pass paper_id to detect_domain for structure cache override
+                detection = detect_domain(text, paper_id=st.session_state.paper_id)
                 st.session_state.detection = detection
 
-                # FIX 2: pass domain to RAG for domain-specific queries
                 df_early = get_code_domain(detection)
                 st.session_state.domain = df_early
                 prog.progress(75)
                 st.session_state.rag = get_relevant_context(text, domain=df_early)
                 prog.progress(100)
+                st.session_state.source_type = source_type
                 st.rerun()
             except Exception as e:
                 st.error(f"Error: {e}")
-                if st.button("← Go back"): st.session_state.stage = "upload"; st.rerun()
+                if st.button("<- Go back"): st.session_state.stage = "upload"; st.rerun()
                 st.stop()
 
         det  = st.session_state.detection or {}
         dom  = det.get("domain", "unknown"); conf = det.get("confidence", 0)
         kws  = det.get("matched_keywords", [])[:4]; ds = det.get("dataset", "MNIST")
         emoji = {"image_classification":"🖼","nlp":"📝","recommendation":"🎯","reinforcement_learning":"🤖","algorithm":"⚙️","graph":"🕸","generative":"🎨"}.get(dom, "📄")
+        src_type = st.session_state.get("source_type", "unknown")
+        src_emoji = {"latex": "📄 LaTeX", "pdf": "📋 PDF", "html": "🌐 HTML"}.get(src_type, "❓ Unknown")
 
         st.markdown('<div class="eyebrow">Step 2 of 4</div>', unsafe_allow_html=True)
         st.markdown('<div class="page-title">Paper Analysis</div>', unsafe_allow_html=True)
@@ -397,7 +532,7 @@ with main_col:
                 st.markdown(f'<div class="conf-track"><div class="conf-fill" style="width:{conf}%"></div></div><p style="font-size:0.71rem;color:var(--text3);margin-top:5px">{conf}% confidence</p>', unsafe_allow_html=True)
                 st.divider()
                 st.markdown('<p class="card-label">Extracted Parameters</p>', unsafe_allow_html=True)
-                for lbl, val in [("Dataset",ds.split("(")[0].strip()),("Key Terms",", ".join(kws) if kws else "Detected"),("Confidence",f"{conf}%"),("Paper ID",st.session_state.paper_id)]:
+                for lbl, val in [("Source",src_emoji),("Dataset",ds.split("(")[0].strip()),("Key Terms",", ".join(kws) if kws else "Detected"),("Confidence",f"{conf}%"),("Paper ID",st.session_state.paper_id)]:
                     st.markdown(f'<div class="row"><span class="row-label">{lbl}</span><span class="row-value">{val}</span></div>', unsafe_allow_html=True)
         with col_r:
             with st.container(border=True):
@@ -410,11 +545,12 @@ with main_col:
                 st.code(st.session_state.text[:1500]+"...", language=None)
 
         st.markdown("")
-        c1, c2, c3 = st.columns([2,2,1], gap="small")
-        with c1: gen_btn = st.button("Generate Code →", use_container_width=True, type="primary")
+        c1, c2, c3, c4 = st.columns([2,2,1,1], gap="small")
+        with c1: gen_btn = st.button("Generate Code ->", use_container_width=True, type="primary")
         with c2: override = st.selectbox("Override domain", "Auto-detect,ml,nlp,recommendation,rl,graph,algorithm".split(","), label_visibility="visible")
-        with c3:
-            if st.button("← Back", use_container_width=True, type="secondary"): st.session_state.stage = "upload"; st.rerun()
+        with c3: st.session_state["fast_mode"] = st.checkbox("⚡ Fast Mode", value=True, help="5x faster: fewer epochs + dataset subset. ~2-5% accuracy drop.")
+        with c4:
+            if st.button("<- Back", use_container_width=True, type="secondary"): st.session_state.stage = "upload"; st.rerun()
 
         if gen_btn:
             with st.spinner("⚡  Generating PyTorch code via Groq..."):
@@ -422,8 +558,7 @@ with main_col:
                     st.session_state.pipe = 3
                     df = get_code_domain(det) if override == "Auto-detect" else override
                     st.session_state.domain = df
-                    # FIX 1: pass paper_id for Call 1 caching
-                    code = generate_code(st.session_state.rag, domain=df, paper_id=st.session_state.paper_id)
+                    code = generate_code(st.session_state.rag, domain=df, paper_id=st.session_state.paper_id, fast_mode=st.session_state.get("fast_mode", True))
                     st.session_state.code = code; st.session_state.stage = "codegen"; st.rerun()
                 except Exception as e: st.error(f"Code generation failed: {e}")
 
@@ -437,7 +572,7 @@ with main_col:
 
         col_l, col_r = st.columns([3,2], gap="large")
         with col_l:
-            st.markdown('<div class="code-hdr"><div class="dot-r"></div><div class="dot-y"></div><div class="dot-g"></div><span class="code-fn">solution.py — generated by Cogniterra</span></div>', unsafe_allow_html=True)
+            st.markdown('<div class="code-hdr"><div class="dot-r"></div><div class="dot-y"></div><div class="dot-g"></div><span class="code-fn">solution.py -- generated by Cogniterra</span></div>', unsafe_allow_html=True)
             st.code(code, language="python")
         with col_r:
             with st.container(border=True):
@@ -451,10 +586,10 @@ with main_col:
 
         st.markdown("")
         c1, c2, c3 = st.columns([2,2,1], gap="small")
-        with c1: st.download_button("⬇  Download .py", data=code, file_name=f"{st.session_state.paper_id}_solution.py", mime="text/plain", use_container_width=True)
-        with c2: verify_btn = st.button("Run & Verify →", use_container_width=True, type="primary")
+        with c1: st.download_button("Download .py", data=code, file_name=f"{st.session_state.paper_id}_solution.py", mime="text/plain", use_container_width=True)
+        with c2: verify_btn = st.button("Run & Verify ->", use_container_width=True, type="primary")
         with c3:
-            if st.button("← Back", use_container_width=True, type="secondary"): st.session_state.stage = "analysis"; st.rerun()
+            if st.button("<- Back", use_container_width=True, type="secondary"): st.session_state.stage = "analysis"; st.rerun()
 
         if verify_btn:
             pid = st.session_state.paper_id
@@ -463,14 +598,13 @@ with main_col:
             with open(code_path, "w", encoding="utf-8") as f2: f2.write(code)
             st.session_state.pipe = 4
             prog = st.progress(10)
-            st.info("🐳  Running in Docker — first run takes 5-10 min to build image...")
+            st.info("🐳  Running in Docker -- first run takes 5-10 min to build image...")
             try:
                 from utils.docker_helper import run_code_in_docker
                 prog.progress(20)
                 success, stdout, stderr = run_code_in_docker(code, pid)
                 prog.progress(70)
 
-                # FIX 3: use null expected accuracy if no golden JSON — score by execution only
                 gp = os.path.join(GOLDEN_DIR, f"{pid}_expected.json")
                 if not os.path.exists(gp):
                     os.makedirs(GOLDEN_DIR, exist_ok=True)
@@ -478,7 +612,12 @@ with main_col:
                     with open(gp, "w") as gf:
                         json.dump({"expected_accuracy": None, "tolerance": 5.0}, gf)
 
-                res = run_test(pid, stdout, stderr, gp)
+                # Upgrade 2: pass filtered_text and code for methodology + completeness scoring
+                res = run_test(
+                    pid, stdout, stderr, gp,
+                    filtered_text=st.session_state.text,
+                    code=st.session_state.code,
+                )
                 prog.progress(95)
                 st.session_state.ep_accs = get_epoch_accs(stdout)
                 st.session_state.result  = res
@@ -506,6 +645,7 @@ with main_col:
         st.markdown('<div class="page-desc">Experiment summary and reproducibility metrics</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="paper-banner"><span style="font-size:1.1rem">🔬</span><span class="paper-banner-title">{st.session_state.title}</span><span class="paper-banner-id">{st.session_state.paper_id}</span></div>', unsafe_allow_html=True)
 
+        # ── Score + metric cards ──────────────────────────────────────────────
         col_sc, col_mx = st.columns([1,3], gap="large")
         with col_sc:
             with st.container(border=True):
@@ -520,9 +660,18 @@ with main_col:
             ds_  = f"{diff:.2f}"   if diff   is not None else "N/A"
             ecol = "var(--error)" if res.get("has_errors") else "var(--success)"
             et   = "Yes" if res.get("has_errors") else "None"
-            st.markdown(f'<div class="mg"><div class="mc {mcls}"><div class="mc-lbl">Expected</div><div class="mc-val">{es}<span class="mc-unt">%</span></div></div><div class="mc {mcls}"><div class="mc-lbl">Achieved</div><div class="mc-val">{acs}<span class="mc-unt">%</span></div></div><div class="mc neu"><div class="mc-lbl">Difference</div><div class="mc-val">{ds_}<span class="mc-unt">%</span></div></div></div><div class="mg"><div class="mc neu"><div class="mc-lbl">Tolerance</div><div class="mc-val">±{tol}<span class="mc-unt">%</span></div></div><div class="mc neu"><div class="mc-lbl">Epochs Run</div><div class="mc-val">{len(ep) if ep else 5}</div></div><div class="mc neu"><div class="mc-lbl">Runtime Errors</div><div class="mc-val" style="font-size:1rem;color:{ecol}">{et}</div></div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="mg"><div class="mc {mcls}"><div class="mc-lbl">Expected</div><div class="mc-val">{es}<span class="mc-unt">%</span></div></div><div class="mc {mcls}"><div class="mc-lbl">Achieved</div><div class="mc-val">{acs}<span class="mc-unt">%</span></div></div><div class="mc neu"><div class="mc-lbl">Difference</div><div class="mc-val">{ds_}<span class="mc-unt">%</span></div></div><div class="mc neu"><div class="mc-lbl">Tolerance</div><div class="mc-val">±{tol}<span class="mc-unt">%</span></div></div><div class="mc neu"><div class="mc-lbl">Epochs</div><div class="mc-val">{len(ep) if ep else 5}</div></div><div class="mc neu"><div class="mc-lbl">Errors</div><div class="mc-val" style="font-size:1rem;color:{ecol}">{et}</div></div></div>', unsafe_allow_html=True)
 
         st.markdown("")
+
+        # ── 4-Dimension scoring breakdown ─────────────────────────────────────
+        with st.container(border=True):
+            st.markdown('<p class="card-label">4-Dimension Scoring Breakdown</p>', unsafe_allow_html=True)
+            render_dimension_scores(res)
+
+        st.markdown("")
+
+        # ── Training curve + epoch table ──────────────────────────────────────
         col_l, col_r = st.columns([1,1], gap="large")
         with col_l:
             with st.container(border=True):
@@ -561,14 +710,14 @@ with main_col:
             try:
                 rp = generate_html_report(res, cp)
                 with open(rp, "r", encoding="utf-8") as f: hc = f.read()
-                st.download_button("⬇  Download Report", data=hc, file_name=f"{st.session_state.paper_id}_report.html", mime="text/html", use_container_width=True)
+                st.download_button("Download Report", data=hc, file_name=f"{st.session_state.paper_id}_report.html", mime="text/html", use_container_width=True)
             except: st.button("Report unavailable", disabled=True, use_container_width=True)
         with c2:
-            if st.button("← Back to Code", use_container_width=True, type="secondary"): st.session_state.stage = "codegen"; st.rerun()
+            if st.button("<- Back to Code", use_container_width=True, type="secondary"): st.session_state.stage = "codegen"; st.rerun()
 
         st.markdown('<div class="cta-box"><div class="cta-title">Ready to replicate another paper?</div><div class="cta-sub">Start fresh with a new ArXiv ID or PDF upload</div></div>', unsafe_allow_html=True)
         _, cc, _ = st.columns([1,2,1])
         with cc:
-            if st.button("New Paper →", use_container_width=True, type="primary", key="new_upload"): reset_all(); st.rerun()
+            if st.button("New Paper ->", use_container_width=True, type="primary", key="new_upload"): reset_all(); st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)

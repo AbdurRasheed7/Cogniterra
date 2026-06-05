@@ -1,81 +1,128 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 import numpy as np
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
+import gymnasium as gym
+import random
+from collections import deque
 torch.manual_seed(42)
 np.random.seed(42)
+random.seed(42)
 
 
+import gymnasium as gym
+from collections import deque
+import random
 
-# Set seeds for reproducibility
+class NeuralProcess(nn.Module):
+    def __init__(self, state_dim, action_dim):
+        super(NeuralProcess, self).__init__()
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.encoder = nn.Sequential(
+            nn.Linear(state_dim + action_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128)
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(128 + state_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, action_dim)
+        )
 
-# Define transformations for MNIST dataset
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
-])
+    def forward(self, state, action=None):
+        if action is None:
+            action = torch.zeros(state.shape[0], self.action_dim).to(state.device)
+        context = torch.cat((state, action), dim=1)
+        encoded_context = self.encoder(context)
+        decoded_context = self.decoder(torch.cat((encoded_context, state), dim=1))
+        return decoded_context
 
-# Load MNIST dataset
-train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+env        = gym.make('CartPole-v1')
+state_dim  = env.observation_space.shape[0]
+action_dim = env.action_space.n
+device     = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Create data loaders
-train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=128, shuffle=True)
-test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=128, shuffle=False)
+model      = NeuralProcess(state_dim, action_dim).to(device)
+target_net = NeuralProcess(state_dim, action_dim).to(device)
+target_net.load_state_dict(model.state_dict())
+optimizer  = optim.Adam(model.parameters(), lr=0.001)
+criterion  = nn.MSELoss()
 
-# Define a simple CNN model
-class SimpleCNN(nn.Module):
-    def __init__(self):
-        super(SimpleCNN, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(64 * 7 * 7, 128)
-        self.fc2 = nn.Linear(128, 10)
+class ReplayBuffer:
+    def __init__(self, capacity=10000):
+        self.buffer = deque(maxlen=capacity)
+    def push(self, *args):
+        self.buffer.append(args)
+    def sample(self, batch_size):
+        return random.sample(self.buffer, batch_size)
+    def __len__(self):
+        return len(self.buffer)
 
-    def forward(self, x):
-        x = self.pool(self.relu(self.conv1(x)))
-        x = self.pool(self.relu(self.conv2(x)))
-        x = x.view(-1, 64 * 7 * 7)
-        x = self.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+buffer        = ReplayBuffer()
+epsilon       = 1.0
+epsilon_min   = 0.01
+epsilon_decay = 0.01
+gamma         = 0.99
+batch_size    = 64
+num_episodes  = 5
+reward_history= []
 
-# Initialize model, loss function, and optimizer
-model = SimpleCNN()
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+for episode in range(num_episodes):
+    result = env.reset()
+    state  = result[0] if isinstance(result, tuple) else result
+    total_reward = 0
 
-# Training loop
-num_epochs = 5
-for epoch in range(num_epochs):
-    for i, (images, labels) in enumerate(train_loader):
-        # Forward pass
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        
-        # Backward and optimize
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        
-        if (i+1) % 200 == 0:
-            print(f'Epoch [{epoch+1}/{num_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss.item():.4f}')
+    for _ in range(500):
+        if random.random() < epsilon:
+            action = env.action_space.sample()
+        else:
+            with torch.no_grad():
+                s = torch.FloatTensor(state).unsqueeze(0).to(device)
+                action = model(s).argmax().item()
 
-# Test the model
-model.eval()
-correct = 0
-total = 0
-with torch.no_grad():
-    for images, labels in test_loader:
-        outputs = model(images)
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
+        result     = env.step(action)
+        next_state, reward, done = result[0], result[1], result[2]
+        buffer.push(state, action, reward, next_state, done)
+        state        = next_state
+        total_reward += reward
 
-accuracy = (correct / total) * 100
-print(f"Final Accuracy: {accuracy:.2f}%")
+        if len(buffer) >= batch_size:
+            batch       = buffer.sample(batch_size)
+            states, actions, rewards, next_states, dones = zip(*batch)
+            states      = torch.FloatTensor(np.array(states)).to(device)
+            actions     = torch.LongTensor(actions).to(device)
+            rewards_t   = torch.FloatTensor(rewards).to(device)
+            next_states = torch.FloatTensor(np.array(next_states)).to(device)
+            dones_t     = torch.FloatTensor(dones).to(device)
+
+            q_values      = model(states).gather(1, actions.unsqueeze(1)).squeeze()
+            next_q_values = target_net(next_states).max(1)[0].detach()
+            targets       = rewards_t + gamma * next_q_values * (1 - dones_t)
+
+            loss = criterion(q_values, targets)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+        if done:
+            break
+
+    epsilon = max(epsilon_min, epsilon * epsilon_decay)
+    reward_history.append(total_reward)
+
+    if (episode + 1) % 50 == 0:
+        avg = np.mean(reward_history[-50:])
+        print(f"Episode {episode+1}/{num_episodes} | Avg Reward (last 50): {avg:.2f} | Epsilon: {epsilon:.3f}")
+
+    if (episode + 1) % 10 == 0:
+        target_net.load_state_dict(model.state_dict())
+
+env.close()
+avg_reward = np.mean(reward_history[-50:])
+accuracy   = min(100.0, avg_reward / 5.0)
+print(f"Final Accuracy: {accuracy:.2f}% (avg reward: {avg_reward:.2f})")

@@ -51,6 +51,14 @@ DATASET_REGISTRY = {
     "mujoco":       "cartpole",     # proxy
 }
 
+# ── Papers that use continuous action spaces ──────────────────────────────────
+# Model names / task keywords that trigger RL_CONTINUOUS_WRAPPER + Pendulum-v1
+# instead of RL_WRAPPER + CartPole-v1.
+_RL_CONTINUOUS_MODELS = {
+    "ddpg", "td3", "sac", "drq", "drqv2", "a3c", "ppo", "trpo",
+    "soft actor", "proximal policy", "trust region",
+}
+
 # ── Training wrapper templates ────────────────────────────────────────────────
 # These are WRAPPERS — they have a # MODEL_CLASS_HERE placeholder
 # that gets replaced with Groq-generated model class.
@@ -129,6 +137,11 @@ X = vectorizer.fit_transform(texts).toarray().astype(np.float32)
 y = np.array(labels, dtype=np.int64)
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state={RANDOM_SEED})
+
+# Fast mode — subset data before creating tensors
+if __FAST_MODE__:
+    X_train, y_train = X_train[:5000], y_train[:5000]
+    X_test,  y_test  = X_test[:1000],  y_test[:1000]
 
 train_dataset = TensorDataset(torch.tensor(X_train), torch.tensor(y_train))
 test_dataset  = TensorDataset(torch.tensor(X_test),  torch.tensor(y_test))
@@ -298,8 +311,12 @@ for episode in range(num_episodes):
             action = env.action_space.sample()
         else:
             with torch.no_grad():
-                s = torch.FloatTensor(state).unsqueeze(0).to(device)
-                action = model(s).argmax().item()
+                s   = torch.FloatTensor(state).unsqueeze(0).to(device)
+                out = model(s)
+                # Actor-critic models return a tuple — use first element
+                if isinstance(out, tuple):
+                    out = out[0]
+                action = out.argmax().item()
 
         result     = env.step(action)
         next_state, reward, done = result[0], result[1], result[2]
@@ -316,8 +333,15 @@ for episode in range(num_episodes):
             next_states = torch.FloatTensor(np.array(next_states)).to(device)
             dones_t     = torch.FloatTensor(dones).to(device)
 
-            q_values      = model(states).gather(1, actions.unsqueeze(1)).squeeze()
-            next_q_values = target_net(next_states).max(1)[0].detach()
+            q_out = model(states)
+            if isinstance(q_out, tuple):
+                q_out = q_out[0]
+            q_values      = q_out.gather(1, actions.unsqueeze(1)).squeeze()
+
+            tgt_out = target_net(next_states)
+            if isinstance(tgt_out, tuple):
+                tgt_out = tgt_out[0]
+            next_q_values = tgt_out.max(1)[0].detach()
             targets       = rewards_t + gamma * next_q_values * (1 - dones_t)
 
             loss = criterion(q_values, targets)
@@ -341,6 +365,115 @@ for episode in range(num_episodes):
 env.close()
 avg_reward = np.mean(reward_history[-50:])
 accuracy   = min(100.0, avg_reward / 5.0)
+print(f"Final Accuracy: {{accuracy:.2f}}% (avg reward: {{avg_reward:.2f}})")
+"""
+
+# ── Continuous action space wrapper (DDPG, TD3, SAC, PPO, DrQ) ───────────────
+# Uses Pendulum-v1 (continuous, 1D action) as proxy environment.
+# Reward range: -1200 (worst) to ~-100 (good). Normalised to 0-100.
+RL_CONTINUOUS_WRAPPER = f"""
+import gymnasium as gym
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+from collections import deque
+import random
+torch.manual_seed({RANDOM_SEED})
+np.random.seed({RANDOM_SEED})
+random.seed({RANDOM_SEED})
+
+# MODEL_CLASS_HERE
+
+env         = gym.make('Pendulum-v1')
+state_dim   = env.observation_space.shape[0]   # 3
+action_dim  = env.action_space.shape[0]         # 1 (continuous)
+action_high = float(env.action_space.high[0])   # 2.0
+device      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+model     = MODEL_NAME_HERE(state_dim, action_dim).to(device)
+optimizer = optim.Adam(model.parameters(), lr=1e-3)
+criterion = nn.MSELoss()
+
+class ReplayBuffer:
+    def __init__(self, capacity=10000):
+        self.buffer = deque(maxlen=capacity)
+    def push(self, *args):
+        self.buffer.append(args)
+    def sample(self, batch_size):
+        return random.sample(self.buffer, batch_size)
+    def __len__(self):
+        return len(self.buffer)
+
+buffer        = ReplayBuffer()
+gamma         = 0.99
+batch_size    = 64
+num_episodes  = 200
+reward_history = []
+
+for episode in range(num_episodes):
+    result = env.reset()
+    state  = result[0] if isinstance(result, tuple) else result
+    total_reward = 0
+
+    for _ in range(200):
+        with torch.no_grad():
+            s   = torch.FloatTensor(state).unsqueeze(0).to(device)
+            out = model(s)
+            # Handle tuple output (actor-critic) — use actor output (first element)
+            if isinstance(out, tuple):
+                out = out[0]
+            # Continuous action — clamp to env action bounds
+            action = out.squeeze().cpu().numpy()
+            if action.ndim == 0:
+                action = np.array([float(action)])
+            action = np.clip(action, -action_high, action_high)
+
+        result     = env.step(action)
+        next_state, reward, done = result[0], result[1], result[2]
+        buffer.push(state, action, reward, next_state, done)
+        state        = next_state
+        total_reward += reward
+
+        if len(buffer) >= batch_size:
+            batch = buffer.sample(batch_size)
+            states, actions, rewards, next_states, dones = zip(*batch)
+            states_t      = torch.FloatTensor(np.array(states)).to(device)
+            actions_t     = torch.FloatTensor(np.array(actions)).to(device)
+            rewards_t     = torch.FloatTensor(rewards).to(device)
+            next_states_t = torch.FloatTensor(np.array(next_states)).to(device)
+            dones_t       = torch.FloatTensor(dones).to(device)
+
+            with torch.no_grad():
+                next_out = model(next_states_t)
+                if isinstance(next_out, tuple):
+                    next_out = next_out[0]
+                # TD target: use negative squared action as proxy value signal
+                next_val = rewards_t + gamma * (-next_out.pow(2).mean(dim=-1)) * (1 - dones_t)
+
+            curr_out = model(states_t)
+            if isinstance(curr_out, tuple):
+                curr_out = curr_out[0]
+            curr_val = -curr_out.pow(2).mean(dim=-1)
+
+            loss = criterion(curr_val, next_val.detach())
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+        if done:
+            break
+
+    reward_history.append(total_reward)
+    if (episode + 1) % 50 == 0:
+        avg = np.mean(reward_history[-50:])
+        print(f"Episode {{episode+1}}/{{num_episodes}} | Avg Reward (last 50): {{avg:.2f}}")
+
+env.close()
+avg_reward = np.mean(reward_history[-50:])
+# Pendulum reward range: -1200 (worst) to -100 (good) → normalise to 0-100
+accuracy   = min(100.0, max(0.0, (avg_reward + 1200) / 11.0))
 print(f"Final Accuracy: {{accuracy:.2f}}% (avg reward: {{avg_reward:.2f}})")
 """
 
@@ -381,14 +514,14 @@ X, y, adj = X.to(device), y.to(device), adj.to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
 criterion = nn.CrossEntropyLoss()
 
-for epoch in range(200):
+for epoch in range(100):
     model.train()
     optimizer.zero_grad()
     out  = model(X, adj)
     loss = criterion(out[train_mask], y[train_mask])
     loss.backward()
     optimizer.step()
-    if (epoch + 1) % 50 == 0:
+    if (epoch + 1) % 25 == 0:
         print(f"Epoch {{epoch+1}}/200 | Loss: {{loss.item():.4f}}")
 
 model.eval()
@@ -485,6 +618,31 @@ class DQN(nn.Module):
         return self.fc3(x)
 """
 
+# Fallback for continuous RL — outputs a single continuous action
+RL_CONTINUOUS_FALLBACK_MODEL = """
+class ActorCritic(nn.Module):
+    def __init__(self, state_dim, action_dim):
+        super(ActorCritic, self).__init__()
+        self.actor = nn.Sequential(
+            nn.Linear(state_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, action_dim),
+            nn.Tanh()
+        )
+        self.critic = nn.Sequential(
+            nn.Linear(state_dim + action_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1)
+        )
+
+    def forward(self, x):
+        return self.actor(x)
+"""
+
 GRAPH_FALLBACK_MODEL = """
 class GCN(nn.Module):
     def __init__(self, input_dim, num_classes):
@@ -500,11 +658,12 @@ class GCN(nn.Module):
 """
 
 FALLBACK_MODELS = {
-    "ml":             (ML_FALLBACK_MODEL,  "Net"),
-    "nlp":            (NLP_FALLBACK_MODEL, "TextClassifier"),
-    "recommendation": (REC_FALLBACK_MODEL, "MatrixFactorization"),
-    "rl":             (RL_FALLBACK_MODEL,  "DQN"),
-    "graph":          (GRAPH_FALLBACK_MODEL, "GCN"),
+    "ml":             (ML_FALLBACK_MODEL,                "Net"),
+    "nlp":            (NLP_FALLBACK_MODEL,               "TextClassifier"),
+    "recommendation": (REC_FALLBACK_MODEL,               "MatrixFactorization"),
+    "rl":             (RL_FALLBACK_MODEL,                 "DQN"),
+    "rl_continuous":  (RL_CONTINUOUS_FALLBACK_MODEL,      "ActorCritic"),
+    "graph":          (GRAPH_FALLBACK_MODEL,              "GCN"),
 }
 
 DOMAIN_WRAPPERS = {
@@ -512,6 +671,7 @@ DOMAIN_WRAPPERS = {
     "nlp":            NLP_WRAPPER,
     "recommendation": RECOMMENDATION_WRAPPER,
     "rl":             RL_WRAPPER,
+    "rl_continuous":  RL_CONTINUOUS_WRAPPER,
     "graph":          GRAPH_WRAPPER,
 }
 
@@ -519,18 +679,30 @@ ML_DATASET_LOADERS = {
     "mnist": """transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
 train_dataset = datasets.MNIST('./data', train=True,  download=True, transform=transform)
 test_dataset  = datasets.MNIST('./data', train=False, download=True, transform=transform)
+# Fast mode — use subset for quicker training on demo
+if __FAST_MODE__:
+    train_dataset = torch.utils.data.Subset(train_dataset, range(10000))
+    test_dataset  = torch.utils.data.Subset(test_dataset,  range(2000))
 train_loader  = DataLoader(train_dataset, batch_size=128, shuffle=True)
 test_loader   = DataLoader(test_dataset,  batch_size=128, shuffle=False)""",
 
     "cifar10": """transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))])
 train_dataset = datasets.CIFAR10('./data', train=True,  download=True, transform=transform)
 test_dataset  = datasets.CIFAR10('./data', train=False, download=True, transform=transform)
+# Fast mode — use subset for quicker training on demo
+if __FAST_MODE__:
+    train_dataset = torch.utils.data.Subset(train_dataset, range(10000))
+    test_dataset  = torch.utils.data.Subset(test_dataset,  range(2000))
 train_loader  = DataLoader(train_dataset, batch_size=128, shuffle=True)
 test_loader   = DataLoader(test_dataset,  batch_size=128, shuffle=False)""",
 
     "cifar100": """transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))])
 train_dataset = datasets.CIFAR100('./data', train=True,  download=True, transform=transform)
 test_dataset  = datasets.CIFAR100('./data', train=False, download=True, transform=transform)
+# Fast mode — use subset for quicker training on demo
+if __FAST_MODE__:
+    train_dataset = torch.utils.data.Subset(train_dataset, range(10000))
+    test_dataset  = torch.utils.data.Subset(test_dataset,  range(2000))
 train_loader  = DataLoader(train_dataset, batch_size=128, shuffle=True)
 test_loader   = DataLoader(test_dataset,  batch_size=128, shuffle=False)""",
 }
@@ -646,11 +818,12 @@ Return ONLY valid JSON:"""
 def _fill_defaults(partial, domain):
     """Fill missing fields with safe domain defaults."""
     defaults = {
-        "ml":             {"task": "image classification", "dataset": "MNIST",   "model_name": "Net",                "metric": "accuracy"},
-        "nlp":            {"task": "text classification",  "dataset": "20newsgroups", "model_name": "TextClassifier","metric": "accuracy"},
-        "recommendation": {"task": "rating prediction",    "dataset": "MovieLens","model_name": "MatrixFactorization","metric": "RMSE"},
-        "rl":             {"task": "control",               "dataset": "CartPole", "model_name": "DQN",               "metric": "reward"},
-        "graph":          {"task": "node classification",   "dataset": "synthetic","model_name": "GCN",               "metric": "accuracy"},
+        "ml":             {"task": "image classification", "dataset": "MNIST",        "model_name": "Net",                 "metric": "accuracy"},
+        "nlp":            {"task": "text classification",  "dataset": "20newsgroups",  "model_name": "TextClassifier",      "metric": "accuracy"},
+        "recommendation": {"task": "rating prediction",    "dataset": "MovieLens",     "model_name": "MatrixFactorization",  "metric": "RMSE"},
+        "rl":             {"task": "control",               "dataset": "CartPole",      "model_name": "DQN",                 "metric": "reward"},
+        "rl_continuous":  {"task": "continuous control",   "dataset": "Pendulum",      "model_name": "ActorCritic",         "metric": "reward"},
+        "graph":          {"task": "node classification",  "dataset": "synthetic",     "model_name": "GCN",                 "metric": "accuracy"},
     }
     base = defaults.get(domain, defaults["ml"])
     for k, v in base.items():
@@ -679,11 +852,12 @@ def generate_model_class(paper_info, domain, filtered_text):
 
     # Domain-specific constructor signature hints
     signature_hints = {
-        "ml":             f"def __init__(self):",
-        "nlp":            f"def __init__(self, input_dim, num_classes):",
-        "recommendation": f"def __init__(self, num_users, num_items, embedding_dim=50):",
-        "rl":             f"def __init__(self, state_dim, action_dim):",
-        "graph":          f"def __init__(self, input_dim, num_classes):",
+        "ml":             "def __init__(self):",
+        "nlp":            "def __init__(self, input_dim, num_classes):",
+        "recommendation": "def __init__(self, num_users, num_items, embedding_dim=50):",
+        "rl":             "def __init__(self, state_dim, action_dim):",
+        "rl_continuous":  "def __init__(self, state_dim, action_dim):",
+        "graph":          "def __init__(self, input_dim, num_classes):",
     }
     sig = signature_hints.get(domain, "def __init__(self):")
 
@@ -714,7 +888,23 @@ def generate_model_class(paper_info, domain, filtered_text):
             "forward() output shape: (batch_size, num_classes). "
             "NEVER return 3D tensor from forward() — always squeeze to 2D before returning."
         ),
-        "rl":    "Must include nn.Linear layers with ReLU activations. No nn.Embedding.",
+        "rl":    (
+            "Must include nn.Linear layers with ReLU activations. No nn.Embedding. "
+            "CRITICAL: forward(self, x) must accept ONLY state as input and return a SINGLE tensor. "
+            "For actor-critic architectures, implement actor and critic as sub-modules, "
+            "but forward(self, x) returns ONLY the actor output tensor — never a tuple. "
+            "The critic is called explicitly via self.critic(state, action), not through forward()."
+        ),
+        "rl_continuous": (
+            "This is a CONTINUOUS ACTION SPACE model for Pendulum-v1. "
+            "state_dim=3, action_dim=1. Actions must be in range [-2, 2]. "
+            "CRITICAL: forward(self, x) accepts state tensor and returns a SINGLE action tensor "
+            "of shape (batch, action_dim) — NOT a tuple. "
+            "Use nn.Tanh() as the final activation to bound actions to [-1, 1] "
+            "(the wrapper scales by action_high=2.0). "
+            "Keep it simple: 2-3 Linear layers with ReLU hidden activations and Tanh output. "
+            "No critic needed in forward() — actor only."
+        ),
         "graph": "Must accept (x, adj) in forward(). Use matrix multiplication for message passing.",
         "recommendation": "Must include nn.Embedding for users and items.",
     }
@@ -763,7 +953,6 @@ class {model_name}(nn.Module):
             if issues:
                 print(f"   ⚠️  Validation issues: {issues}")
                 if attempt < 3:
-                    # Make prompt more explicit on retry
                     prompt += f"\n\nPrevious attempt had issues: {issues}. Fix them."
                     continue
 
@@ -800,9 +989,6 @@ def _validate_model_class(code, model_name, domain):
     if domain == "ml" and "nn.Conv2d" not in code and "Conv2d" not in code:
         issues.append("CV model missing Conv2d")
 
-    # ML channel check skipped — channel count depends on dataset (MNIST=1, CIFAR=3)
-    # This is handled in the prompt instead
-
     if domain == "nlp" and "nn.Embedding" in code:
         issues.append("NLP model uses nn.Embedding but input is TF-IDF floats — use nn.Linear as first layer instead")
 
@@ -811,13 +997,10 @@ def _validate_model_class(code, model_name, domain):
 
     if domain == "nlp" and "MultiheadAttention" in code:
         import re as _re
-        # Check for 2-arg call pattern — missing value argument
         if _re.search(r'self\.\w+\(\s*\w+\s*,\s*\w+\s*\)', code) and not _re.search(r'self\.\w+\(\s*\w+\s*,\s*\w+\s*,\s*\w+\s*\)', code):
             issues.append("MultiheadAttention called with 2 args — must use 3: attn(x, x, x) for self-attention")
-        # Check for missing batch_first=True
         if "MultiheadAttention(" in code and "batch_first=True" not in code:
             issues.append("MultiheadAttention missing batch_first=True — required for (batch, seq, dim) input")
-        # Check for missing tuple unpack
         if _re.search(r'=\s*self\.\w+\(x,\s*x,\s*x\)', code) and "_ =" not in code and ", _" not in code:
             issues.append("MultiheadAttention output not unpacked as tuple: use 'out, _ = attn(x, x, x)'")
 
@@ -827,6 +1010,14 @@ def _validate_model_class(code, model_name, domain):
     if domain == "recommendation" and "Embedding" not in code:
         issues.append("Recommendation model missing Embedding layers")
 
+    if domain == "rl_continuous":
+        # forward() must not return a tuple
+        if "return (" in code or "return self.actor(" in code and "return self.critic(" in code:
+            issues.append("rl_continuous forward() must return a single tensor, not a tuple")
+        # Must have Tanh output for bounded continuous actions
+        if "Tanh" not in code and "tanh" not in code:
+            issues.append("rl_continuous model missing Tanh output activation — actions must be bounded")
+
     return issues
 
 
@@ -834,7 +1025,7 @@ def _validate_model_class(code, model_name, domain):
 # MAIN generate_code() — called by pipeline.py (same interface as before)
 # ═════════════════════════════════════════════════════════════════════════════
 
-def generate_code(filtered_text, domain="ml", paper_id=None):
+def generate_code(filtered_text, domain="ml", paper_id=None, fast_mode=False):
     print("🤖 Sending to Groq for code generation...")
 
     # ── Algorithm domain: full Groq generation (unchanged) ───────────────────
@@ -849,7 +1040,7 @@ STRICT RULES:
 - Always print: print(f"Final Accuracy: {{result:.2f}}%") or print(f"Algorithm Result: {{result}}")
 
 ALGORITHM CONTEXT:
-{filtered_text}
+{filtered_text[:4000]}
 
 Write the complete Python implementation now:"""
         response    = llm.invoke(prompt)
@@ -859,46 +1050,64 @@ Write the complete Python implementation now:"""
         elif "```" in groq_output:
             groq_output = groq_output.split("```")[1].split("```")[0]
         print("✅ Code generated successfully!")
-        return ALGORITHM_TEMPLATE + "\n" + groq_output
+        return ALGORITHM_TEMPLATE.replace("__FAST_MODE__", "False") + "\n" + groq_output
 
     # ── All other domains: two-call pipeline ─────────────────────────────────
 
     # Call 1: extract structured paper info
     paper_info = extract_paper_structure(filtered_text, domain, paper_id=paper_id)
 
-    # Call 2: generate model class
-    model_code, model_name = generate_model_class(paper_info, domain, filtered_text)
+    # ── RL wrapper routing: discrete (DQN/Double-DQN) vs continuous (DDPG/TD3/SAC/PPO/DrQ) ──
+    # Check model name and task against known continuous-action keywords.
+    # Must happen AFTER extract_paper_structure so we have paper_info.
+    effective_domain = domain
+    if domain == "rl":
+        model_name_lower = paper_info.get("model_name", "").lower()
+        task_lower       = paper_info.get("task", "").lower()
+        is_continuous = (
+            any(kw in model_name_lower for kw in _RL_CONTINUOUS_MODELS)
+            or any(kw in task_lower    for kw in _RL_CONTINUOUS_MODELS)
+            or "continuous" in task_lower
+            or "actor" in model_name_lower
+        )
+        if is_continuous:
+            effective_domain = "rl_continuous"
+            print(f"   🔀 Continuous action space detected ({paper_info.get('model_name')}) → using Pendulum-v1")
+
+    # Call 2: generate model class (pass effective_domain so arch_checks are correct)
+    model_code, model_name = generate_model_class(paper_info, effective_domain, filtered_text)
 
     # Determine if we're using Groq model or fallback
     using_fallback = False
     if model_code is None:
         print("   🔄 Using fallback template model")
-        fallback       = FALLBACK_MODELS.get(domain, FALLBACK_MODELS["ml"])
+        fallback       = FALLBACK_MODELS.get(effective_domain, FALLBACK_MODELS["ml"])
         model_code     = fallback[0]
         model_name     = fallback[1]
         using_fallback = True
 
     # ── Assemble final code ───────────────────────────────────────────────────
-    wrapper = DOMAIN_WRAPPERS.get(domain, ML_WRAPPER)
+    wrapper = DOMAIN_WRAPPERS.get(effective_domain, ML_WRAPPER)
 
-    # Inject model class
-    code = wrapper.replace("# MODEL_CLASS_HERE", model_code)
+    # Inject model class and fast_mode into wrapper
+    code = wrapper.replace("__FAST_MODE__", "True" if fast_mode else "False")
+    code = code.replace("# MODEL_CLASS_HERE", model_code)
 
     # Inject model name for instantiation
     code = code.replace("MODEL_NAME_HERE", model_name)
 
     # Inject dataset loader for ML domain
-    if domain == "ml":
-        dataset_key    = _resolve_dataset(paper_info.get("dataset", ""), domain)
+    if effective_domain == "ml":
+        dataset_key    = _resolve_dataset(paper_info.get("dataset", ""), effective_domain)
         dataset_loader = ML_DATASET_LOADERS.get(dataset_key, ML_DATASET_LOADERS["mnist"])
         code           = code.replace("DATASET_LOADER_HERE", dataset_loader)
 
     # Patch hyperparams
     hyperparams = paper_info.get("hyperparams", {})
-    code        = _patch_hyperparams(code, domain, hyperparams)
+    code        = _patch_hyperparams(code, effective_domain, hyperparams)
 
     # Safety fixes
-    code = _safety_fixes(code, domain)
+    code = _safety_fixes(code, effective_domain)
 
     if using_fallback:
         print("✅ Code generated (fallback model — paper architecture extraction failed)")
@@ -916,7 +1125,7 @@ def _resolve_dataset(dataset_str, domain):
             return DATASET_REGISTRY[key]
     # Domain defaults
     defaults = {"ml": "mnist", "nlp": "20newsgroups", "recommendation": "movielens",
-                "rl": "cartpole", "graph": "synthetic"}
+                "rl": "cartpole", "rl_continuous": "pendulum", "graph": "synthetic"}
     return defaults.get(domain, "mnist")
 
 
@@ -930,13 +1139,12 @@ def _patch_hyperparams(code, domain, hyperparams):
 
     if domain == "ml":
         momentum = _safe_float(hyperparams.get("momentum"), None) or 0.9
-        # Safety caps for MNIST training on CPU
         if momentum < 0.8:
-            momentum = 0.9       # paper reports ImageNet momentum — default to 0.9 for MNIST
+            momentum = 0.9
         if lr >= 0.1:
-            lr = 0.01            # ImageNet lr (0.1) is too high for MNIST — cap at 0.01
-        batch_size = max(batch_size, 64)   # minimum 64 — tiny batches are slow and noisy
-        batch_size = min(batch_size, 256)  # maximum 256 — prevent OOM
+            lr = 0.01
+        batch_size = max(batch_size, 64)
+        batch_size = min(batch_size, 256)
         code = code.replace("lr=0.01",           f"lr={lr}")
         code = code.replace("momentum=0.9",      f"momentum={momentum}")
         code = code.replace("batch_size=128",    f"batch_size={batch_size}")
@@ -945,10 +1153,8 @@ def _patch_hyperparams(code, domain, hyperparams):
         print(f"📌 Patched ML params: lr={lr}, momentum={momentum}, batch_size={batch_size}, epochs={epochs}")
 
     elif domain == "nlp":
-        # Cap batch_size — tiny batches cause slow training
         batch_size = max(batch_size, 64)
         batch_size = min(batch_size, 256)
-        # Cap lr — Transformer paper uses warmup schedule, 0.001 is too high without it
         if lr > 1e-4:
             lr = 1e-4
         code = code.replace("lr=1e-3",         f"lr={lr}")
@@ -964,15 +1170,16 @@ def _patch_hyperparams(code, domain, hyperparams):
         code = code.replace("batch_size=256",   f"batch_size={batch_size}")
         print(f"📌 Patched Rec params: lr={lr}, embedding_dim={embedding_dim}, epochs={epochs}")
 
-    elif domain == "rl":
+    elif domain in ("rl", "rl_continuous"):
         gamma         = _safe_float(hyperparams.get("gamma"), None) or 0.99
         epsilon_decay = _safe_float(hyperparams.get("epsilon_decay"), None) or 0.995
-        episodes      = _safe_int(hyperparams.get("episodes"), None) or 500
-        episodes      = min(episodes, 500)
-        code = code.replace("lr=1e-3",             f"lr={lr}")
+        episodes      = _safe_int(hyperparams.get("episodes"), None) or (500 if domain == "rl" else 200)
+        episodes      = min(episodes, 500 if domain == "rl" else 200)
+        code = code.replace("lr=1e-3",               f"lr={lr}")
         code = code.replace("gamma         = 0.99",  f"gamma         = {gamma}")
         code = code.replace("epsilon_decay = 0.995", f"epsilon_decay = {epsilon_decay}")
         code = code.replace("num_episodes  = 500",   f"num_episodes  = {episodes}")
+        code = code.replace("num_episodes  = 200",   f"num_episodes  = {episodes}")
         print(f"📌 Patched RL params: lr={lr}, gamma={gamma}, episodes={episodes}")
 
     elif domain == "graph":
@@ -985,7 +1192,8 @@ def _patch_hyperparams(code, domain, hyperparams):
 
 def _safe_float(val, domain):
     """Parse float, return domain-appropriate default if invalid."""
-    defaults = {"ml": 0.01, "nlp": 1e-3, "recommendation": 1e-3, "rl": 1e-3, "graph": 0.01}
+    defaults = {"ml": 0.01, "nlp": 1e-3, "recommendation": 1e-3,
+                "rl": 1e-3, "rl_continuous": 1e-3, "graph": 0.01}
     try:
         v = float(val)
         if v <= 0 or v > 1.0:
@@ -997,14 +1205,14 @@ def _safe_float(val, domain):
 
 def _safe_int(val, domain):
     """Parse int, return domain-appropriate default if invalid."""
-    epoch_defaults  = {"ml": 5,  "nlp": 10, "recommendation": 5,  "rl": 500, "graph": 200}
-    batch_defaults  = {"ml": 128,"nlp": 64, "recommendation": 256,"rl": 64,  "graph": 32}
+    epoch_defaults = {"ml": 5, "nlp": 10, "recommendation": 5,
+                      "rl": 500, "rl_continuous": 200, "graph": 200}
     try:
         v = int(float(val))
         if v <= 0:
             return epoch_defaults.get(domain, 5)
-        # Cap epochs
-        epoch_caps = {"ml": 10, "nlp": 15, "recommendation": 10, "rl": 500, "graph": 200}
+        epoch_caps = {"ml": 5, "nlp": 10, "recommendation": 5,
+                      "rl": 300, "rl_continuous": 200, "graph": 100}
         if v > epoch_caps.get(domain, 10) and v < 1000:
             return min(v, epoch_caps.get(domain, 10))
         return v
@@ -1015,44 +1223,31 @@ def _safe_int(val, domain):
 def _safety_fixes(code, domain):
     """Global safety post-processing."""
     if domain == "ml":
-        # Fix hardcoded flatten
         code = re.sub(r'x\s*=\s*x\.view\(\s*-1\s*,\s*[^\)]+\)',
                       'x = x.view(x.size(0), -1)', code)
-        # Fix large hardcoded Linear input sizes → LazyLinear
         code = re.sub(r'nn\.Linear\(\s*\d{4,}\s*,', 'nn.LazyLinear(', code)
-        # Cap self.layers/self.num_layers to 4 — too many layers = hours on CPU
         code = re.sub(r'(self\.layers|self\.num_layers)\s*=\s*([5-9]|[1-9]\d+)', r'\1 = 4  # capped for CPU', code)
-        # Cap self.layers to 4 — 10+ layers on CPU takes hours
         code = re.sub(r'self\.layers\s*=\s*([5-9]|\d{2,})', 'self.layers = 4', code)
         code = re.sub(r'self\.num_layers\s*=\s*([5-9]|\d{2,})', 'self.num_layers = 4', code)
-        # Fix 3-channel Conv2d → 1-channel only when MNIST is loaded
-        # CIFAR10/CIFAR100 are 3-channel RGB — don't patch those
         if "datasets.MNIST" in code and "CIFAR" not in code:
             code = re.sub(r'nn\.Conv2d\(\s*3\s*,', 'nn.Conv2d(1,', code)
-        # Fix too many blocks — cap range() to 4 for CPU feasibility
-        # e.g. range(17) → range(4), range(self.layers // 2) is harder to catch
-        code = re.sub(r'range\(\s*(1[0-9]|[2-9]\d+)\s*\)', 'range(4)', code)
+        code = re.sub(r'range\(\s*([1-9][0-9])\s*\)', 'range(4)', code)
         code = re.sub(r'range\(self\.layers\s*//\s*\d+\)', 'range(4)', code)
         code = re.sub(r'range\(self\.num_layers\)', 'range(4)', code)
-        # Add AdaptiveAvgPool before LazyLinear if not present
-        # This prevents spatial dimension collapse on small images
         if "LazyLinear" in code and "AdaptiveAvgPool" not in code and "adaptive" not in code.lower():
             pool_line = "x = F.adaptive_avg_pool2d(x, (1, 1)) if x.dim() == 4 else x"
             flat_line = "x = x.view(x.size(0), -1)"
             code = code.replace(flat_line, pool_line + "\n        " + flat_line)
 
-    # Fix common Groq capitalization typo — MultiHeadAttention → MultiheadAttention
-    code = code.replace("nn.MultiHeadAttention", "nn.MultiheadAttention")
+    import re as _re2
+    code = _re2.sub(r'F\.relu(?!\s*\(\w)', 'nn.ReLU()', code)
+    code = code.replace("nn.MultiHeadAttention",    "nn.MultiheadAttention")
+    code = code.replace("nn.Multiheadattention",    "nn.MultiheadAttention")
+    code = code.replace("nn.Multi_Head_Attention",  "nn.MultiheadAttention")
 
-    # Remove deprecated torchtext
     if "import torchtext" in code or "from torchtext" in code:
         code = code.replace("import torchtext", "# torchtext deprecated")
         code = code.replace("from torchtext",   "# torchtext deprecated")
-
-    # Fix common Groq capitalisation mistakes
-    code = code.replace("nn.MultiHeadAttention", "nn.MultiheadAttention")
-    code = code.replace("nn.Multiheadattention", "nn.MultiheadAttention")
-    code = code.replace("nn.Multi_Head_Attention", "nn.MultiheadAttention")
 
     return code
 

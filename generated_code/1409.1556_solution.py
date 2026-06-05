@@ -42,15 +42,19 @@ class ConvNet(nn.Module):
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
 train_dataset = datasets.MNIST('./data', train=True,  download=True, transform=transform)
 test_dataset  = datasets.MNIST('./data', train=False, download=True, transform=transform)
+# Fast mode — use subset for quicker training on demo
+if __FAST_MODE__:
+    train_dataset = torch.utils.data.Subset(train_dataset, range(10000))
+    test_dataset  = torch.utils.data.Subset(test_dataset,  range(2000))
 train_loader  = DataLoader(train_dataset, batch_size=64, shuffle=True)
 test_loader   = DataLoader(test_dataset,  batch_size=64, shuffle=False)
 
 device    = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model     = ConvNet().to(device)
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9, nesterov=True, weight_decay=0.0001)
+optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9, nesterov=True, weight_decay=0.0005)
 
-num_epochs = 10
+num_epochs = 5
 for epoch in range(num_epochs):
     model.train()
     running_loss = 0.0

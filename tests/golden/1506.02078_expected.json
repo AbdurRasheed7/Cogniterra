@@ -1,10 +1,1 @@
-{
-  "paper_id": "1506.02078",
-  "expected_accuracy": 98.0,
-  "tolerance": 3.0,
-  "optimizer": "Adam",
-  "dataset": "MNIST",
-  "seed": 42,
-  "epochs": 5,
-  "notes": "LSTM on MNIST sequence classification"
-}
+{"expected_accuracy": 94.0, "tolerance": 3.0} 

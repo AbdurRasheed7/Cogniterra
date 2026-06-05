@@ -1,9 +1,1 @@
-{
-  "paper_id": "1512.03385",
-  "expected_accuracy": 99.0,
-  "tolerance": 3.0,
-  "dataset": "MNIST",
-  "seed": 42,
-  "epochs": 5,
-  "notes": "ResNet paper - complex architecture"
-}
+{"expected_accuracy": 99.0, "tolerance": 1.5} 

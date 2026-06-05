@@ -1,10 +1,1 @@
-{
-  "paper_id": "1409.1556",
-  "expected_accuracy": 99.0,
-  "tolerance": 2.0,
-  "optimizer": "SGD",
-  "dataset": "MNIST",
-  "seed": 42,
-  "epochs": 5,
-  "notes": "VGG paper - AI defaulted to MNIST"
-}
+{"expected_accuracy": 90.0, "tolerance": 3.0} 

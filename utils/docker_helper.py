@@ -36,8 +36,8 @@ _APT_PACKAGES = "libgomp1 libjpeg62-turbo libpng16-16"
 
 FALLBACK_REQUIREMENTS = f"""\
 {_PYTORCH_CPU_INDEX}
-torch==2.3.0+cpu
-torchvision==0.18.0+cpu
+torch
+torchvision
 numpy
 pillow
 """
@@ -103,6 +103,10 @@ def _clean_requirements(raw: str) -> str:
             continue
         if "--extra-index-url" in stripped or "--index-url" in stripped:
             continue
+        # Strip pinned versions from torch/torchvision — causes hash mismatch errors
+        # e.g. torch==2.3.0+cpu → torch
+        if stripped.startswith("torch==") or stripped.startswith("torchvision=="):
+            stripped = stripped.split("==")[0]
         lines.append(stripped)
 
     packages = "\n".join(lines)
@@ -136,8 +140,8 @@ Given this Python code:
 
 Block 1 — requirements.txt (add only packages actually imported in the code above):
 ```
-torch==2.3.0+cpu
-torchvision==0.18.0+cpu
+torch
+torchvision
 numpy
 pillow
 ```
@@ -199,6 +203,9 @@ def run_code_in_docker(
     image_tag = f"repro-{re.sub(r'[^a-z0-9-]', '-', paper_id.lower())}"
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        
+        # Ensure __FAST_MODE__ placeholder is always resolved before Docker execution
+        code = code.replace("__FAST_MODE__", "True")
 
         # Always write solution.py — needed for container run
         with open(os.path.join(tmpdir, "solution.py"), "w", encoding="utf-8") as f:

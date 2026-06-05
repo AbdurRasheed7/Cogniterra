@@ -9,13 +9,14 @@ from datetime import datetime
 # ── Load environment variables ─────────────────────────────
 load_dotenv()
 
-# ── Configure Groq as LLM ──────────────────────────────────
+# ── Configure Groq as LLM — uses separate API key for CrewAI ──
+# Add GROQ_API_KEY_CREW to .env to avoid competing with main pipeline token budget
 groq_llm = LLM(
-    model="groq/llama-3.3-70b-versatile",   # CrewAI recognizes "groq/" prefix
+    model="groq/llama-3.3-70b-versatile",
     temperature=0.1,
-    max_tokens=8192,
-    api_key=os.getenv("GROQ_API_KEY"),      # CrewAI uses api_key field
-    base_url="https://api.groq.com/openai/v1"  # Groq's OpenAI-compatible endpoint
+    max_tokens=4096,   # reduced from 8192 — crew agents don't need huge outputs
+    api_key=os.getenv("GROQ_API_KEY_CREW") or os.getenv("GROQ_API_KEY"),
+    base_url="https://api.groq.com/openai/v1"
 )
 
 # ── Define Agents ──────────────────────────────────────────
@@ -84,30 +85,31 @@ def create_tasks(paper_id, paper_text, rag_context, code, stdout, stderr,
         description=f"""Parse the research paper {paper_id} and confirm the methodology 
         was successfully extracted. Paper text length: {len(paper_text)} characters. 
         RAG context length: {len(rag_context)} characters.
-        Confirm the extraction was successful and summarize what was found.""",
+        Confirm the extraction was successful and summarize what was found.
+        Keep your response concise — 3-5 sentences maximum.""",
         agent=parser_agent,
-        expected_output="Confirmation of paper parsing with summary of extracted methodology"
+        expected_output="Brief confirmation of paper parsing with 3-sentence summary"
     )
 
     code_task = Task(
         description=f"""Review the generated PyTorch code for paper {paper_id}.
-        The code was generated from the RAG context.
-        Code preview: {code[:500]}...
-        Confirm the code structure is correct and follows ML best practices.""",
+        Code preview: {code[:300]}...
+        Confirm the code structure is correct and follows ML best practices.
+        Keep your response concise — 3-5 sentences maximum.""",
         agent=coder_agent,
-        expected_output="Code review summary confirming structure and quality"
+        expected_output="Brief code review — 3 sentences confirming structure and quality"
     )
 
     debug_task = Task(
         description=f"""Review the debugging results for paper {paper_id}.
-        stdout: {stdout[:200] if stdout else 'No output'}
-        stderr: {stderr[:200] if stderr else 'No errors'}
-        Confirm whether code ran successfully or needed fixes.""",
+        stdout: {stdout[:150] if stdout else 'No output'}
+        stderr: {stderr[:150] if stderr else 'No errors'}
+        Confirm whether code ran successfully or needed fixes.
+        Keep your response concise — 2-3 sentences maximum.""",
         agent=debugger_agent,
-        expected_output="Debugging summary with outcome and any fixes applied"
+        expected_output="2-sentence debugging summary with outcome"
     )
 
-    # Safe access — repro_result may be partial if Docker failed
     expected_acc  = repro_result.get('expected_accuracy',      'N/A')
     actual_acc    = repro_result.get('actual_accuracy',        'N/A')
     repro_score   = repro_result.get('reproducibility_score',  0)
@@ -119,12 +121,11 @@ def create_tasks(paper_id, paper_text, rag_context, code, stdout, stderr,
         Actual accuracy: {actual_acc}%
         Score: {repro_score}/100
         Status: {repro_status}
-        Provide a detailed analysis of the reproducibility results.""",
+        Provide a brief analysis — 3-5 sentences maximum.""",
         agent=tester_agent,
-        expected_output="Detailed reproducibility analysis with score justification"
+        expected_output="Brief reproducibility analysis — 3-5 sentences"
     )
 
-    # Safe access — hallucination_result may be partial too
     hall_score      = hallucination_result.get('hallucination_score',  0)
     total_assumed   = hallucination_result.get('total_assumptions',    0)
     total_from_paper= hallucination_result.get('total_from_paper',     0)
@@ -135,10 +136,9 @@ def create_tasks(paper_id, paper_text, rag_context, code, stdout, stderr,
         Hallucination score: {hall_score}/100
         Assumptions made: {total_assumed}
         Values from paper: {total_from_paper}
-        Summary: {hall_summary}
-        Provide recommendations to reduce hallucinations.""",
+        Provide 2-3 brief recommendations to reduce hallucinations.""",
         agent=hallucination_agent,
-        expected_output="Hallucination analysis with recommendations"
+        expected_output="2-3 bullet recommendations to reduce hallucinations"
     )
 
     return [parse_task, code_task, debug_task, test_task, hallucination_task]

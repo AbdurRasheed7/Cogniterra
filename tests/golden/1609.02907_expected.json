@@ -1,4 +1,1 @@
-{
-  "expected_accuracy": null,
-  "tolerance": 2.0
-}
+{"expected_accuracy": 62.0, "tolerance": 5.0} 

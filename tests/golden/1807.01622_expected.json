@@ -1,10 +1,1 @@
-{
-  "paper_id": "1807.01622",
-  "expected_accuracy": 99.0,
-  "tolerance": 3.0,
-  "optimizer": "Adam",
-  "dataset": "MNIST",
-  "seed": 42,
-  "epochs": 5,
-  "notes": "LeNet style CNN on MNIST"
-}
+{"expected_accuracy": null, "tolerance": 5.0} 

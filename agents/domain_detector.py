@@ -1,4 +1,6 @@
 import re
+import json
+import os
 
 DOMAIN_KEYWORDS = {
     "nlp": [
@@ -18,7 +20,7 @@ DOMAIN_KEYWORDS = {
         "agent", "environment", "action space", "state space", "OpenAI Gym",
         "Markov decision", "DQN", "PPO", "actor-critic", "episode reward",
         "value function", "temporal difference", "exploration exploitation",
-        "replay buffer", "epsilon greedy", "discount factor", "DDPG", "SAC",
+        "replay buffer", "epsilon greedy", "discount factor", "DDPG",
         "A3C", "A2C", "proximal policy", "trust region", "model-based RL",
         "monte carlo", "trajectory", "rollout", "gymnasium"
     ],
@@ -26,20 +28,21 @@ DOMAIN_KEYWORDS = {
         "graph neural network", "point cloud", "graph matching",
         "message passing", "node classification", "graph convolution",
         "edge features", "adjacency matrix", "graph embedding",
-        "3d object", "GNN", "GCN", "graph attention network",
-        "knowledge graph", "graph network", "graph convolutional",
+        "GNN", "GCN", "graph attention network",
+        "graph network", "graph convolutional",
         "spectral graph", "spatial graph", "graph pooling",
         "node embedding", "link prediction", "graph classification",
         "GraphSAGE", "GAT", "graph isomorphism", "molecular graph",
-        "social network", "heterogeneous graph", "dynamic graph"
+        "social network", "heterogeneous graph", "dynamic graph",
+        "cora", "citeseer", "pubmed"
     ],
     "generative": [
-        "generative adversarial", "GAN", "variational autoencoder", "VAE",
+        "generative adversarial", "variational autoencoder",
         "image generation", "latent space", "generator", "discriminator",
         "diffusion model", "denoising diffusion", "score matching",
         "image synthesis", "style transfer", "super resolution",
         "inpainting", "text to image", "flow model", "normalizing flow",
-        "DDPM", "stable diffusion", "noise prediction", "U-Net generation"
+        "DDPM", "stable diffusion", "noise prediction"
     ],
     "recommendation": [
         "recommendation system", "collaborative filtering", "user-item",
@@ -80,71 +83,135 @@ DOMAIN_DATASETS = {
     "unknown":              "Unable to determine — manual selection needed"
 }
 
+# ---------------------------------------------------------------------------
+# Task string -> domain mapping used by structure cache override
+# ---------------------------------------------------------------------------
+# Maps substrings of the "task" field in cached structure JSON to domains.
+# This is the source of truth when keyword detection gets confused by
+# papers that mention terms from other domains in their related work.
+# e.g. BatchNorm paper mentions "language model" but task = "image classification"
 
-def detect_domain(paper_text):
+_TASK_TO_DOMAIN = {
+    # CV / image tasks
+    "image classification":   "image_classification",
+    "object detection":       "image_classification",
+    "image segmentation":     "image_classification",
+    "semantic segmentation":  "image_classification",
+    "instance segmentation":  "image_classification",
+    "visual recognition":     "image_classification",
+    "image recognition":      "image_classification",
+    # Training technique papers — applied to images
+    "batch normalization":    "image_classification",
+    "knowledge distillation": "image_classification",
+    "model compression":      "image_classification",
+    "network pruning":        "image_classification",
+    "quantization":           "image_classification",
+    "mixed precision":        "image_classification",
+    # NLP tasks
+    "machine translation":    "nlp",
+    "text classification":    "nlp",
+    "language modeling":      "nlp",
+    "question answering":     "nlp",
+    "named entity":           "nlp",
+    "sentiment":              "nlp",
+    # RL tasks
+    "reinforcement learning": "reinforcement_learning",
+    "control":                "reinforcement_learning",
+    "policy":                 "reinforcement_learning",
+    "reward":                 "reinforcement_learning",
+    # Graph tasks
+    "node classification":    "graph",
+    "graph classification":   "graph",
+    "link prediction":        "graph",
+    # Recommendation tasks
+    "rating prediction":      "recommendation",
+    "collaborative filtering":"recommendation",
+    "recommendation":         "recommendation",
+}
+
+
+def _check_structure_cache(paper_id: str):
+    """
+    Look up the cached paper structure JSON written by coder_agent.py.
+
+    If found and the task field maps to a known domain, return a detection
+    result dict — this overrides keyword-based detection entirely.
+
+    Returns None if no cache exists or task is unrecognised.
+
+    This is the robust fix for misclassification: instead of patching
+    keyword priority lists (fragile), we use the LLM's own structured
+    extraction of what the paper is actually about.
+    """
+    if not paper_id:
+        return None
+
+    cache_path = os.path.normpath(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "tests", "structure",
+            f"{paper_id}_structure.json",
+        )
+    )
+
+    if not os.path.exists(cache_path):
+        return None
+
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            structure = json.load(f)
+
+        task = structure.get("task", "").lower().strip()
+        if not task:
+            return None
+
+        for task_key, domain in _TASK_TO_DOMAIN.items():
+            if task_key in task:
+                print(f"   🗂️  Structure cache override: task={task!r} → domain={domain}")
+                return _result(domain, [f"structure cache: task={task!r}"])
+
+        # Task found but not in our map — log and fall through to keyword detection
+        print(f"   ⚠️  Structure cache: unrecognised task={task!r} — using keyword detection")
+        return None
+
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def detect_domain(paper_text, paper_id=None):
+    """
+    Detect the domain of a paper from its text.
+
+    Args:
+        paper_text: filtered paper text from parse_paper()
+        paper_id:   arXiv ID (optional) — used to check structure cache first.
+                    Pass this whenever available to get more accurate detection.
+
+    Returns:
+        Detection result dict with keys: domain, confidence, score,
+        matched_keywords, dataset, all_scores.
+    """
+    # ── Structure cache override (most reliable signal) ───────────────────────
+    # Check this BEFORE any keyword logic. The structure cache contains the
+    # LLM's own extraction of what task the paper solves, which is more
+    # accurate than keyword matching for papers that mention other domains
+    # in their related work (e.g. BatchNorm mentioning "language model").
+    if paper_id:
+        cached = _check_structure_cache(paper_id)
+        if cached is not None:
+            return cached
+
     text_lower = paper_text.lower()
 
-    # ── Priority order: most specific first, CNN dead last ────────────────────
+    # ── Priority order: most specific first ──────────────────────────────────
 
-    # -2. Graph PRE-CHECK — must be BEFORE CV pre-check because GCN paper
-    #     mentions "semi-supervised classification" which could trigger CV
+    # 1. NLP — Transformer/BERT papers first (mention "attention" everywhere)
     if any(term in text_lower for term in [
-        "graph convolutional network", "graph neural network",
-        "node classification", "message passing", "adjacency matrix",
-        "graph convolution", "spectral graph", "graph laplacian",
-        "semi-supervised classification with graph",
-        "gcn", "gnn", "graph attention", "graphsage",
-        "graph isomorphism", "molecular graph",
-        "cora", "citeseer", "pubmed dataset", "citation network"
-    ]):
-        return _result("graph", ["graph/GNN domain detected"])
-
-    # -1. CV PRE-CHECK — only fire on terms that are 100% unambiguous CV
-    #     Must NOT appear in RL papers (DDPG mentions "deep" and "network" everywhere)
-    if any(term in text_lower for term in [
-        "image classification on imagenet",
-        "top-1 accuracy", "top-5 accuracy",
-        "vgg very deep", "very deep convolutional networks for large-scale",
-        "mobilenet", "efficientnet",
-        "densely connected convolutional", "densenet",
-        "feature pyramid network", "object detection with deep"
-    ]):
-        return _result("image_classification", ["CV pre-check detected"])
-
-    # 0. Graph PRE-CHECK (fallback) — before NLP because GCN papers mention "text classification"
-    #    in experiments section when benchmarking on text datasets
-    if any(term in text_lower for term in [
-        "graph convolutional network", "graph neural network",
-        "node classification", "message passing", "adjacency matrix",
-        "graph convolution", "spectral graph", "graph laplacian",
-        "semi-supervised classification with graph",
-        "gcn", "gnn", "graph attention", "graphsage",
-        "graph isomorphism", "molecular graph"
-    ]):
-        return _result("graph", ["graph/GNN domain detected"])
-
-    # 0.5. Recommendation PRE-CHECK — before NLP because NCF/rec papers
-    #      mention "natural language processing" in related work
-    if any(term in text_lower for term in [
-        "recommendation system", "recommender system",
-        "collaborative filtering", "matrix factorization",
-        "user-item interaction", "rating prediction",
-        "movielens", "implicit feedback", "explicit feedback",
-        "personalized recommendation", "top-k recommendation",
-        "click through rate", "cold start problem"
-    ]):
-        return _result("recommendation", ["recommendation system detected"])
-
-    # 1. NLP — after recommendation pre-check
-    #    Removed "text classification", "bert", "transformer" alone —
-    #    they appear in GCN/graph papers as benchmark comparisons
-    if any(term in text_lower for term in [
-        "attention mechanism", "multi-head attention", "self-attention",
+        "attention is all you need", "multi-head attention", "self-attention",
         "machine translation", "language model", "seq2seq", "sequence to sequence",
         "natural language processing", "named entity recognition",
         "sentiment analysis", "question answering",
-        "attention is all you need", "positional encoding",
-        "neural machine translation", "bleu score",
+        "positional encoding", "neural machine translation", "bleu score",
         "tokenization", "subword", "masked language model",
         "text generation task", "pre-training language",
         "language understanding", "bert pre-training",
@@ -152,62 +219,70 @@ def detect_domain(paper_text):
     ]):
         return _result("nlp", ["NLP task detected"])
 
-    # 2. Reinforcement Learning — before CV because RL papers use CNNs (e.g. Atari DQN)
-    # Note: short terms like "ppo", "sac", "dqn" must be checked as whole words
-    #       to avoid matching substrings like "approach", "saccade", "adjacent"
-    import re as _re
-    rl_long_terms = [
-        "reinforcement learning", "reward function", "policy gradient",
-        "q-learning", "markov decision", "actor-critic",
-        "openai gym", "action space", "state space", "episode reward",
-        "value function", "temporal difference", "replay buffer",
-        "epsilon greedy", "discount factor",
-        "proximal policy", "trust region", "gymnasium", "rollout"
-    ]
-    rl_short_terms = ["dqn", "ppo", "ddpg", "a3c", "a2c"]  # removed "sac" — too ambiguous as standalone word
-    rl_match = any(term in text_lower for term in rl_long_terms) or                any(_re.search(rf'\b{term}\b', text_lower) for term in rl_short_terms)
-    if rl_match:
-        return _result("reinforcement_learning", ["reinforcement learning detected"])
-
-    # 3. Graph — before CV because "graph convolutional" contains "convolutional"
+    # 2. Graph — before CV because "graph convolutional" contains "convolutional"
+    #    and GCN/GAT papers mention "classification" in benchmarks
     if any(term in text_lower for term in [
         "graph neural network", "graph convolutional", "graph convolution",
         "node classification", "message passing", "adjacency matrix",
-        "graph embedding", "gnn", "gcn", "graph attention",
-        "knowledge graph", "graph network", "link prediction",
-        "graph classification", "graphsage", "graph isomorphism",
-        "molecular graph", "point cloud"
-    ]):
+        "graph embedding", "gcn", "gnn", "graph attention",
+        "graphsage", "graph isomorphism", "molecular graph",
+        "cora dataset", "citeseer", "pubmed dataset", "citation network"
+    ]) or re.search(r'\bgat\b', text_lower):
         return _result("graph", ["graph/GNN domain detected"])
 
-    # 4. Generative — before CV because GANs/VAEs heavily use CNNs
-    #    Short terms like "gan", "vae" checked as whole words to avoid substrings
-    import re as _re2
-    gen_long_terms = [
-        "generative adversarial", "variational autoencoder",
-        "image generation", "diffusion model",
-        "denoising diffusion", "score matching", "image synthesis",
-        "style transfer", "super resolution", "normalizing flow",
-        "ddpm", "stable diffusion", "noise prediction", "latent diffusion",
-        "generator network", "discriminator network"
-    ]
-    gen_short_terms = ["vae"]  # removed "gan" — appears as standalone word in non-generative papers
-    gen_match = any(term in text_lower for term in gen_long_terms) or                 any(_re2.search(rf'\b{term}\b', text_lower) for term in gen_short_terms)
-    if gen_match:
-        return _result("generative", ["generative model detected"])
-
-    # 5. Recommendation
+    # 3. Recommendation — before NLP because NCF mentions "natural language"
     if any(term in text_lower for term in [
         "recommendation system", "recommender system",
         "collaborative filtering", "matrix factorization",
         "user-item interaction", "rating prediction",
-        "personalized recommendation", "top-k recommendation",
         "movielens", "implicit feedback", "explicit feedback",
+        "personalized recommendation", "top-k recommendation",
         "click through rate", "cold start problem"
     ]):
         return _result("recommendation", ["recommendation system detected"])
 
-    # 6. Algorithm (pure CS — no ML frameworks)
+    # 4. Reinforcement Learning — before CV because RL papers use CNNs
+    #    Short terms (dqn, ppo, a3c) checked with word boundaries
+    rl_long = [
+        "reinforcement learning", "reward function", "policy gradient",
+        "q-learning", "markov decision", "actor-critic",
+        "openai gym", "action space", "state space", "episode reward",
+        "value function", "temporal difference", "replay buffer",
+        "epsilon greedy", "discount factor", "ddpg",
+        "proximal policy", "trust region", "gymnasium", "rollout"
+    ]
+    rl_short = ["dqn", "ppo", "a3c", "a2c"]  # sac removed — appears in non-RL papers
+    if any(t in text_lower for t in rl_long) or \
+       any(re.search(rf'\b{t}\b', text_lower) for t in rl_short):
+        return _result("reinforcement_learning", ["reinforcement learning detected"])
+
+    # 5. Generative — before CV because GANs use CNNs
+    #    gan/vae checked with word boundaries — appear as substrings elsewhere
+    gen_long = [
+        "generative adversarial", "variational autoencoder",
+        "image generation", "diffusion model", "denoising diffusion",
+        "score matching", "image synthesis", "style transfer",
+        "super resolution", "normalizing flow", "ddpm",
+        "stable diffusion", "noise prediction", "latent diffusion",
+        "generator network", "discriminator network"
+    ]
+    gen_short = ["vae"]  # gan removed — appears as standalone word in non-GAN papers
+    if any(t in text_lower for t in gen_long) or \
+       any(re.search(rf'\b{t}\b', text_lower) for t in gen_short):
+        return _result("generative", ["generative model detected"])
+
+    # 6. CV pre-checks — before algorithm because CV papers mention "learning algorithm"
+    #    Use specific phrases that only appear in CV papers
+    if any(term in text_lower for term in [
+        "deep residual learning", "image classification on imagenet",
+        "top-1 accuracy", "top-5 accuracy",
+        "vgg very deep", "very deep convolutional networks for large-scale",
+        "mobilenet", "efficientnet", "densely connected convolutional",
+        "feature pyramid network", "object detection with deep"
+    ]):
+        return _result("image_classification", ["CV pre-check detected"])
+
+    # 7. Algorithm — pure CS papers (no ML, no CV)
     if any(term in text_lower for term in [
         "sorting algorithm", "dynamic programming", "binary search",
         "tree traversal", "shortest path", "time complexity",
@@ -216,8 +291,7 @@ def detect_domain(paper_text):
     ]):
         return _result("algorithm", ["algorithm detected"])
 
-    # 7. Image Classification — LAST resort
-    #    Only fires if none of the above matched
+    # 8. Image Classification — last resort
     if any(term in text_lower for term in [
         "image classification", "object detection", "image recognition",
         "convolutional neural network", "resnet", "vgg", "alexnet",
@@ -229,19 +303,18 @@ def detect_domain(paper_text):
     ]):
         return _result("image_classification", ["CV/image classification detected"])
 
-    # ── Fallback: keyword frequency scoring ───────────────────────────────────
+    # ── Fallback: keyword frequency scoring ──────────────────────────────────
     scores = {}
     matched_keywords = {}
-
     for domain, keywords in DOMAIN_KEYWORDS.items():
-        score   = 0
+        score = 0
         matches = []
         for keyword in keywords:
             count = text_lower.count(keyword.lower())
             if count > 0:
                 score += count
                 matches.append(keyword)
-        scores[domain]           = score
+        scores[domain] = score
         matched_keywords[domain] = matches
 
     best_domain = max(scores, key=scores.get)
@@ -274,7 +347,6 @@ def detect_domain(paper_text):
 
 
 def _result(domain, keywords):
-    """Helper — returns a clean priority-override result."""
     return {
         "domain":           domain,
         "confidence":       95,
@@ -316,10 +388,9 @@ def format_domain_report(detection):
 
 def get_code_domain(detection):
     domain = detection['domain']
-
     mapping = {
         "image_classification":  "ml",
-        "generative":            "ml",          # no generative template yet — fallback to ml
+        "generative":            "ml",
         "nlp":                   "nlp",
         "recommendation":        "recommendation",
         "reinforcement_learning":"rl",
@@ -327,5 +398,4 @@ def get_code_domain(detection):
         "graph":                 "graph",
         "unknown":               "ml"
     }
-
     return mapping.get(domain, "ml")

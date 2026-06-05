@@ -14,47 +14,39 @@ class DNN(nn.Module):
         super(DNN, self).__init__()
         self.conv1 = nn.Conv2d(3, 100, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(100)
-        self.conv2 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(100)
-        self.conv3 = nn.Conv2d(100, 100, kernel_size=3, padding=1, stride=2)
-        self.bn3 = nn.BatchNorm2d(100)
-        self.conv4 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
-        self.bn4 = nn.BatchNorm2d(100)
-        self.conv5 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
-        self.bn5 = nn.BatchNorm2d(100)
-        self.conv6 = nn.Conv2d(100, 100, kernel_size=3, padding=1, stride=2)
-        self.bn6 = nn.BatchNorm2d(100)
-        self.conv7 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
-        self.bn7 = nn.BatchNorm2d(100)
-        self.conv8 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
-        self.bn8 = nn.BatchNorm2d(100)
-        self.conv9 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
-        self.bn9 = nn.BatchNorm2d(100)
-        self.conv10 = nn.Conv2d(100, 100, kernel_size=3, padding=1)
-        self.bn10 = nn.BatchNorm2d(100)
+        self.conv_blocks = nn.ModuleList([self._conv_block(100, 100) for _ in range(4)])
         self.pool = nn.AdaptiveAvgPool2d((1,1))
         self.fc = nn.Linear(100, 10)
 
+    def _conv_block(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels)
+        )
+
     def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = F.relu(self.bn2(self.conv2(out)))
-        out = F.relu(self.bn3(self.conv3(out)))
-        out = F.relu(self.bn4(self.conv4(out)))
-        out = F.relu(self.bn5(self.conv5(out)))
-        out = F.relu(self.bn6(self.conv6(out)))
-        out = F.relu(self.bn7(self.conv7(out)))
-        out = F.relu(self.bn8(self.conv8(out)))
-        out = F.relu(self.bn9(self.conv9(out)))
-        out = F.relu(self.bn10(self.conv10(out)))
-        out = self.pool(out)
-        out = out.view(out.size(0), -1)
-        out = self.fc(out)
-        return out
+        x = F.relu(self.bn1(self.conv1(x)))
+        for i, block in enumerate(self.conv_blocks):
+            if i == 0 or i == 2:
+                x = F.relu(block(x) + x)
+            else:
+                x = block(x)
+        x = self.pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        return x
 
 # ── Data loading ──────────────────────────────────────────────────────────────
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))])
 train_dataset = datasets.CIFAR10('./data', train=True,  download=True, transform=transform)
 test_dataset  = datasets.CIFAR10('./data', train=False, download=True, transform=transform)
+# Fast mode — use subset for quicker training on demo
+if __FAST_MODE__:
+    train_dataset = torch.utils.data.Subset(train_dataset, range(10000))
+    test_dataset  = torch.utils.data.Subset(test_dataset,  range(2000))
 train_loader  = DataLoader(train_dataset, batch_size=64, shuffle=True)
 test_loader   = DataLoader(test_dataset,  batch_size=64, shuffle=False)
 
@@ -63,7 +55,7 @@ model     = DNN().to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9, nesterov=True, weight_decay=0.01)
 
-num_epochs = 10
+num_epochs = 5
 for epoch in range(num_epochs):
     model.train()
     running_loss = 0.0
