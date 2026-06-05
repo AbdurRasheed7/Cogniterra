@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cogniterra Report — 1706.03762</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+        :root {
+            --bg: #0f1117; --surf: #1a1d27; --surf2: #22263a;
+            --border: #2e3248; --accent: #f97316;
+            --text: #f1f5f9; --text2: #94a3b8; --text3: #475569;
+            --success: #22c55e; --error: #ef4444; --warn: #f59e0b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; padding: 2rem; max-width: 1100px; margin: 0 auto; }
+        .header { background: linear-gradient(135deg, #1a1d27, #22263a); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 14px; padding: 2rem 2.5rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; }
+        .header-left h1 { font-family: 'Sora', sans-serif; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; }
+        .header-left h1 span { color: var(--accent); }
+        .header-left p { font-size: 0.78rem; color: var(--text3); margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
+        .big-score { font-family: 'Sora', sans-serif; font-size: 4rem; font-weight: 800; color: #ef4444; line-height: 1; }
+        .big-score-lbl { font-size: 0.62rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.12em; margin-top: 4px; text-align: right; }
+        .status-badge { display: inline-block; padding: 5px 14px; border-radius: 7px; font-size: 0.72rem; font-weight: 700; margin-top: 8px; }
+        .pass { background: rgba(34,197,94,0.12); color: var(--success); border: 1px solid rgba(34,197,94,0.3); }
+        .fail { background: rgba(239,68,68,0.12); color: var(--error); border: 1px solid rgba(239,68,68,0.3); }
+        .partial { background: rgba(245,158,11,0.12); color: var(--warn); border: 1px solid rgba(245,158,11,0.3); }
+        .section { background: var(--surf); border: 1px solid var(--border); border-radius: 12px; padding: 1.4rem 1.6rem; margin-bottom: 1rem; }
+        .section-title { font-size: 0.6rem; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.13em; margin-bottom: 1rem; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1rem; }
+        .metric { background: var(--surf2); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem 1rem; }
+        .metric-lbl { font-size: 0.58rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 5px; font-weight: 700; }
+        .metric-val { font-family: 'Sora', sans-serif; font-size: 1.5rem; font-weight: 800; color: var(--text); }
+        .metric-unt { font-size: 0.7rem; color: var(--text2); }
+        .dim-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.2rem; }
+        .dim-card { background: var(--surf2); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; position: relative; overflow: hidden; }
+        .dim-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .dim-exec::before { background: linear-gradient(90deg, #22c55e, #16a34a); }
+        .dim-meth::before { background: linear-gradient(90deg, #f97316, #ea580c); }
+        .dim-res::before  { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+        .dim-comp::before { background: linear-gradient(90deg, #a855f7, #9333ea); }
+        .dim-label { font-size: 0.58rem; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+        .dim-score { font-family: 'Sora', sans-serif; font-size: 1.8rem; font-weight: 800; line-height: 1; }
+        .dim-weight { font-size: 0.6rem; color: var(--text3); margin-top: 4px; }
+        .bar-wrap { background: #1a1d27; border-radius: 3px; height: 4px; margin-top: 8px; overflow: hidden; }
+        .bar { height: 4px; border-radius: 3px; }
+        .bar-exec { background: linear-gradient(90deg, #22c55e, #16a34a); }
+        .bar-meth { background: linear-gradient(90deg, #f97316, #ea580c); }
+        .bar-res  { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+        .bar-comp { background: linear-gradient(90deg, #a855f7, #9333ea); }
+        .sub-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 1rem 0 0.5rem; }
+        .sub-card { background: #0f1117; border: 1px solid var(--border); border-radius: 8px; padding: 0.65rem 0.7rem; text-align: center; }
+        .sub-lbl { font-size: 0.54rem; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 5px; line-height: 1.3; }
+        .sub-val { font-family: 'Sora', sans-serif; font-size: 1.1rem; font-weight: 800; }
+        .formula { background: #0f1117; border: 1px solid var(--border); border-radius: 8px; padding: 0.8rem 1rem; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text2); margin-top: 1rem; }
+        .formula span { color: var(--accent); font-weight: 700; }
+        .row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 0.78rem; }
+        .row:last-child { border-bottom: none; }
+        .row-lbl { color: var(--text2); }
+        .row-val { font-weight: 600; color: var(--text); }
+        .reasoning { font-size: 0.72rem; color: var(--text3); font-style: italic; margin-top: 0.5rem; padding: 0.6rem 0.8rem; background: #0f1117; border-radius: 6px; border-left: 2px solid var(--accent); }
+        .code-wrap { background: #0a0d14; border: 1px solid var(--border); border-radius: 10px; padding: 1.2rem; overflow-x: auto; max-height: 500px; overflow-y: auto; }
+        code { font-family: 'JetBrains Mono', monospace; font-size: 0.73rem; color: #c3d2df; white-space: pre-wrap; }
+        .footer { text-align: center; color: var(--text3); font-size: 0.68rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="header-left">
+        <h1>Cogni<span>terra</span> Report</h1>
+        <p>Paper: 1706.03762 &nbsp;|&nbsp; 2026-06-01 14:16:01 IST</p>
+    </div>
+    <div style="text-align:right">
+        <div class="big-score">39.0</div>
+        <div class="big-score-lbl">/ 100</div>
+        <div class="status-badge pass">PASS -- Executed successfully (no baseline to compare)</div>
+    </div>
+</div>
+
+<!-- Accuracy metrics -->
+<div class="section">
+    <div class="section-title">Results Comparison</div>
+    <div class="metrics-grid">
+        <div class="metric">
+            <div class="metric-lbl">Expected</div>
+            <div class="metric-val">N/A<span class="metric-unt">%</span></div>
+        </div>
+        <div class="metric">
+            <div class="metric-lbl">Achieved</div>
+            <div class="metric-val">57.9<span class="metric-unt">%</span></div>
+        </div>
+        <div class="metric">
+            <div class="metric-lbl">Difference</div>
+            <div class="metric-val">N/A<span class="metric-unt">%</span></div>
+        </div>
+        <div class="metric">
+            <div class="metric-lbl">Tolerance</div>
+            <div class="metric-val">±5.0<span class="metric-unt">%</span></div>
+        </div>
+    </div>
+    <div class="row"><span class="row-lbl">Runtime Errors</span><span class="row-val" style="color:#22c55e">None</span></div>
+</div>
+
+<!-- 4-Dimension scores -->
+<div class="section">
+    <div class="section-title">4-Dimension Scoring Breakdown</div>
+    <div class="dim-grid">
+        <div class="dim-card dim-exec">
+            <div class="dim-label">Execution</div>
+            <div class="dim-score" style="color:#22c55e">100</div>
+            <div class="dim-weight">weight 0.20</div>
+            <div class="bar-wrap"><div class="bar bar-exec" style="width:100.0%"></div></div>
+        </div>
+        <div class="dim-card dim-meth">
+            <div class="dim-label">Methodology</div>
+            <div class="dim-score" style="color:#ef4444">20</div>
+            <div class="dim-weight">weight 0.35</div>
+            <div class="bar-wrap"><div class="bar bar-meth" style="width:20.0%"></div></div>
+        </div>
+        <div class="dim-card dim-res">
+            <div class="dim-label">Results</div>
+            <div class="dim-score" style="color:#ef4444">30</div>
+            <div class="dim-weight">weight 0.30</div>
+            <div class="bar-wrap"><div class="bar bar-res" style="width:30.0%"></div></div>
+        </div>
+        <div class="dim-card dim-comp">
+            <div class="dim-label">Completeness</div>
+            <div class="dim-score" style="color:#ef4444">20</div>
+            <div class="dim-weight">weight 0.15</div>
+            <div class="bar-wrap"><div class="bar bar-comp" style="width:20.0%"></div></div>
+        </div>
+    </div>
+
+    <!-- Methodology sub-scores -->
+    <div class="section-title" style="margin-top:1rem">Methodology Sub-Scores</div>
+    <div class="sub-grid">
+        <div class="sub-card">
+            <div class="sub-lbl">Architecture</div>
+            <div class="sub-val" style="color:#ef4444">0.0</div>
+        </div>
+        <div class="sub-card">
+            <div class="sub-lbl">Optimizer</div>
+            <div class="sub-val" style="color:#f59e0b">0.5</div>
+        </div>
+        <div class="sub-card">
+            <div class="sub-lbl">Loss Fn</div>
+            <div class="sub-val" style="color:#f59e0b">0.5</div>
+        </div>
+        <div class="sub-card">
+            <div class="sub-lbl">Hyperparams</div>
+            <div class="sub-val" style="color:#ef4444">0.0</div>
+        </div>
+        <div class="sub-card">
+            <div class="sub-lbl">Contribution</div>
+            <div class="sub-val" style="color:#ef4444">0.0</div>
+        </div>
+    </div>
+
+    <div class="reasoning">The code does not implement the Transformer architecture as described in the paper, and key hyperparameters and contributions are missing.</div>
+    <div class="reasoning" style="border-left-color:#a855f7;margin-top:0.5rem"><b style="color:#c4b5fd">Completeness:</b> The code implements a basic Transformer model architecture but lacks the scaled dot-product attention, multi-head attention, and parameter-free position representation, and is applied to a text classification task instead of machine translation.</div>
+
+    <div class="formula">
+        Final = <span>0.20</span>&times;100 + <span>0.35</span>&times;20 + <span>0.30</span>&times;30 + <span>0.15</span>&times;20 = <span>39.0</span> / 100
+    </div>
+</div>
+
+<!-- Generated code -->
+<div class="section">
+    <div class="section-title">Generated Code</div>
+    <div class="code-wrap"><code>
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from sklearn.datasets import fetch_20newsgroups
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, TensorDataset
+torch.manual_seed(42)
+np.random.seed(42)
+
+print("Loading 20newsgroups dataset...")
+data   = fetch_20newsgroups(subset='all', remove=('headers', 'footers', 'quotes'), data_home='/app/data')
+texts  = data.data
+labels = data.target
+
+vectorizer = TfidfVectorizer(max_features=10000, stop_words='english')
+X = vectorizer.fit_transform(texts).toarray().astype(np.float32)
+y = np.array(labels, dtype=np.int64)
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Fast mode — subset data before creating tensors
+if True:
+    X_train, y_train = X_train[:5000], y_train[:5000]
+    X_test,  y_test  = X_test[:1000],  y_test[:1000]
+
+train_dataset = TensorDataset(torch.tensor(X_train), torch.tensor(y_train))
+test_dataset  = TensorDataset(torch.tensor(X_test),  torch.tensor(y_test))
+train_loader  = DataLoader(train_dataset, batch_size=64, shuffle=True)
+test_loader   = DataLoader(test_dataset,  batch_size=64, shuffle=False)
+
+num_classes = len(np.unique(y))
+input_dim   = X_train.shape[1]
+
+class Transformer(nn.Module):
+    def __init__(self, input_dim, num_classes):
+        super(Transformer, self).__init__()
+        self.hidden_size = 512
+        self.num_heads = 8
+        self.num_layers = 6
+        self.input_projection = nn.Linear(input_dim, self.hidden_size)
+        self.layers = nn.ModuleList([nn.ModuleList([nn.MultiheadAttention(self.hidden_size, self.num_heads, batch_first=True), 
+                                                    nn.LayerNorm(self.hidden_size), 
+                                                    nn.Linear(self.hidden_size, self.hidden_size), 
+                                                    nn.LayerNorm(self.hidden_size)]) for _ in range(self.num_layers)])
+        self.output_projection = nn.Linear(self.hidden_size, num_classes)
+
+    def forward(self, x):
+        x = self.input_projection(x)
+        for layer in self.layers:
+            attention, layer_norm1, linear, layer_norm2 = layer
+            x = x.unsqueeze(1)
+            out, _ = attention(x, x, x)
+            x = out.squeeze(1)
+            x = layer_norm1(x + x)
+            x = F.relu(x)
+            x = linear(x)
+            x = layer_norm2(x + x)
+        x = self.output_projection(x)
+        return x
+
+device    = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model     = Transformer(input_dim, num_classes).to(device)
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
+
+num_epochs = 10
+for epoch in range(num_epochs):
+    model.train()
+    running_loss = 0.0
+    for X_batch, y_batch in train_loader:
+        X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+        optimizer.zero_grad()
+        outputs = model(X_batch)
+        loss    = criterion(outputs, y_batch)
+        loss.backward()
+        optimizer.step()
+        running_loss += loss.item()
+    print(f"Epoch [{epoch+1}/{num_epochs}] Loss: {running_loss/len(train_loader):.4f}")
+
+model.eval()
+correct = 0
+total   = 0
+with torch.no_grad():
+    for X_batch, y_batch in test_loader:
+        X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+        outputs  = model(X_batch)
+        _, preds = torch.max(outputs, 1)
+        total   += y_batch.size(0)
+        correct += (preds == y_batch).sum().item()
+
+accuracy = 100.0 * correct / total
+print(f"Final Accuracy: {accuracy:.2f}%")
+</code></div>
+</div>
+
+<div class="footer">
+    Generated by Cogniterra &nbsp;|&nbsp; Powered by Groq + Llama 3.3 70B &nbsp;|&nbsp; 2026-06-01 14:16:01 IST
+</div>
+
+</body>
+</html>

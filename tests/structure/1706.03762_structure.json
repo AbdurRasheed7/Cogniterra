@@ -1,0 +1,20 @@
+{
+  "task": "machine translation",
+  "dataset": "WMT14",
+  "model_name": "Transformer",
+  "metric": "BLEU",
+  "architecture": {
+    "layers": 6,
+    "heads": 8,
+    "hidden_size": 512,
+    "use_attention": true
+  },
+  "hyperparams": {
+    "lr": 0.001,
+    "batch_size": 256,
+    "epochs": 12,
+    "dropout": 0.1,
+    "weight_decay": 0.01
+  },
+  "_cached_at": "2026-04-02 17:15"
+}

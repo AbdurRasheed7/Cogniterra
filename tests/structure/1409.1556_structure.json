@@ -1,0 +1,19 @@
+{
+  "task": "image classification",
+  "dataset": "ImageNet",
+  "model_name": "ConvNet",
+  "metric": "accuracy",
+  "architecture": {
+    "layers": 19,
+    "filters": 64,
+    "use_residual": false
+  },
+  "hyperparams": {
+    "lr": 0.01,
+    "batch_size": 256,
+    "epochs": 90,
+    "dropout": 0.5,
+    "weight_decay": 0.0005
+  },
+  "_cached_at": "2026-04-23 18:26"
+}

@@ -1,0 +1,21 @@
+{
+  "task": "semi-supervised node classification",
+  "dataset": "Cora",
+  "model_name": "GraphConvNet",
+  "metric": "accuracy",
+  "architecture": {
+    "layers": 2,
+    "hidden_size": 64,
+    "use_attention": false,
+    "use_graph_convolution": true,
+    "normalized_adjacency": true
+  },
+  "hyperparams": {
+    "lr": 0.01,
+    "batch_size": 32,
+    "epochs": 200,
+    "dropout": 0.5,
+    "weight_decay": 0.01
+  },
+  "_cached_at": "2026-06-05 17:30"
+}

@@ -1,0 +1,1 @@
+{"task": "meta-learning", "dataset": "GP prior", "model_name": "NeuralProcess", "metric": "log-likelihood", "architecture": {}, "hyperparams": {}} 

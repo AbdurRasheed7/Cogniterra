@@ -53,8 +53,8 @@ models/
 my_model.h5
 
 # Generated / temp files in your project
-generated_code/
-reports/
+#generated_code/
+#reports/
 data/raw/
 data/downloaded/
 __pycache__/
@@ -91,7 +91,7 @@ debug_*.py
 logs/
 
 # Test structure cache
-tests/structure/
+#tests/structure/
 
 # Generated code (optional)
 #generated_code/

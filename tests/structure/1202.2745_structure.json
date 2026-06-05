@@ -1,0 +1,23 @@
+{
+  "task": "image classification",
+  "dataset": "CIFAR10",
+  "model_name": "MultiColumnDNN",
+  "metric": "accuracy",
+  "architecture": {
+    "layers": 4,
+    "filters": 100,
+    "use_residual": false,
+    "num_columns": 3,
+    "column_aggregation": "average",
+    "use_max_pooling": true,
+    "activation": "relu"
+  },
+  "hyperparams": {
+    "lr": 0.001,
+    "batch_size": 64,
+    "epochs": 5,
+    "dropout": 0.5,
+    "weight_decay": 0.01
+  },
+  "_cached_at": "2026-06-05 17:30"
+}

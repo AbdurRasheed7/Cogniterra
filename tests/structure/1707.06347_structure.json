@@ -1,0 +1,18 @@
+{
+  "task": "reinforcement learning",
+  "dataset": "Atari",
+  "model_name": "PPO",
+  "metric": "average episode reward",
+  "architecture": {
+    "hidden_size": 64,
+    "use_target_network": true
+  },
+  "hyperparams": {
+    "lr": 0.001,
+    "batch_size": 32,
+    "epochs": 100,
+    "dropout": 0.1,
+    "weight_decay": 0.01
+  },
+  "_cached_at": "2026-06-03 23:58"
+}
